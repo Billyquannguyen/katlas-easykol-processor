@@ -42,13 +42,13 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
         <section className="w-full max-w-sm rounded-2xl border border-white/15 bg-white/[0.08] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.48)] backdrop-blur-xl">
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100 shadow-[0_0_32px_rgba(16,185,129,0.12)]">
             <ShieldCheck className="size-3.5" />
-            Katlas Buddy Access
+            EasyKOL Processor Access
           </div>
 
           <div className="mt-6 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight text-white">Katlas Buddy</h1>
+            <h1 className="text-3xl font-semibold tracking-tight text-white">EasyKOL Processor</h1>
             <p className="mt-2 text-sm leading-6 text-white/58">
-              Internal workflow system for creator sourcing, outreach, and campaign ops.
+              Internal tool for processing EasyKOL exports into sourcing-ready sheets.
             </p>
           </div>
 

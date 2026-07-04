@@ -5,6 +5,7 @@ import {
   centralDatabaseName,
   centralWorksheetNames,
   createEmptyCentralDatabase,
+  easyKolWorksheetNames,
   requiredWorksheetHeaders,
   worksheetHeaderAliases,
   type ActiveCampaignCreatorRecord,
@@ -337,6 +338,52 @@ export async function listCampaignProfilesInGoogleSheets() {
   return {
     records,
   };
+}
+
+export async function upsertCampaignProfileInGoogleSheets(record: CampaignProfileRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const campaignRows = await readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(
+    spreadsheetId,
+    "CampaignProfiles",
+  );
+  const records = campaignRows.rows.map((row) => row.record);
+  const nextRecord = normalizeCampaignProfileRecord(record);
+  const existingIndex = records.findIndex(
+    (campaign) => campaign.campaignId === nextRecord.campaignId,
+  );
+  const nextRows =
+    existingIndex === -1
+      ? [nextRecord, ...records]
+      : records.map((campaign, index) => (index === existingIndex ? nextRecord : campaign));
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "CampaignProfiles", campaignRows, nextRows);
+  invalidateDatabaseReadCache("campaign-profile-targeted-write");
+  invalidateCreatorSourcingReadCache("campaign-profile-targeted-write");
+
+  return { records: nextRows };
+}
+
+export async function deleteCampaignProfileInGoogleSheets(campaignId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const campaignRows = await readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(
+    spreadsheetId,
+    "CampaignProfiles",
+  );
+  const nextRows = campaignRows.rows
+    .map((row) => row.record)
+    .filter((campaign) => campaign.campaignId !== campaignId);
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "CampaignProfiles", campaignRows, nextRows);
+  invalidateDatabaseReadCache("campaign-profile-targeted-delete");
+  invalidateCreatorSourcingReadCache("campaign-profile-targeted-delete");
+
+  return { records: nextRows };
 }
 
 export async function migrateAgencyDatabaseContactsInGoogleSheets() {
@@ -1308,7 +1355,7 @@ async function resolveSpreadsheetId(config: GoogleSheetsConfig) {
     method: "POST",
     body: JSON.stringify({
       properties: { title: centralDatabaseName },
-      sheets: centralWorksheetNames.map((worksheetName) => ({
+      sheets: easyKolWorksheetNames.map((worksheetName) => ({
         properties: { title: worksheetName },
       })),
     }),
@@ -1333,7 +1380,7 @@ async function ensureDatabaseShape(spreadsheetId: string) {
   const existingSheets = new Map(
     (metadata.sheets ?? []).map((sheet) => [sheet.properties.title, sheet.properties.sheetId]),
   );
-  const missingWorksheetNames = centralWorksheetNames.filter(
+  const missingWorksheetNames = easyKolWorksheetNames.filter(
     (worksheetName) => !existingSheets.has(worksheetName),
   );
   const requests = missingWorksheetNames.map((worksheetName) => ({
@@ -1910,16 +1957,9 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   logGoogleSheetsCache("creator-sourcing-cache-miss", { reason });
   await ensureDatabaseShape(spreadsheetId);
 
-  const campaignRange = `${quoteSheetName("CampaignProfiles")}!A1:Z1000`;
   const sourcingRange = `${quoteSheetName("SourcingTemplates")}!A1:Z1000`;
-  const valuesByRange = await readValuesBatch(spreadsheetId, [campaignRange, sourcingRange]);
-  const [campaignProfiles, sourcingRows, appSettingRows] = await Promise.all([
-    Promise.resolve(
-      parseWorksheetRowsFromValues(
-        "CampaignProfiles",
-        valuesByRange.get(campaignRange) ?? [],
-      ) as CampaignProfileRecord[],
-    ),
+  const valuesByRange = await readValuesBatch(spreadsheetId, [sourcingRange]);
+  const [sourcingRows, appSettingRows] = await Promise.all([
     Promise.resolve(
       parseWorksheetRecordsWithRowNumbersFromValues<SourcingTemplateRecord>(
         "SourcingTemplates",
@@ -1942,7 +1982,6 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   }
 
   const database = createEmptyCentralDatabase();
-  database.worksheets.CampaignProfiles = campaignProfiles;
   database.worksheets.SourcingTemplates = cleanup.records.filter(isActiveSourcingTemplateRecord);
   database.worksheets.AppSettings = appSettingRows.rows.map((row) => row.record);
 
@@ -1980,10 +2019,6 @@ async function readCreatorSourcingDatabaseSubset(
   }> = {},
 ) {
   const database = createEmptyCentralDatabase();
-  database.worksheets.CampaignProfiles = (await readWorksheetRows(
-    spreadsheetId,
-    "CampaignProfiles",
-  )) as CampaignProfileRecord[];
   database.worksheets.SourcingTemplates =
     overrides.SourcingTemplates ??
     ((await readWorksheetRows(spreadsheetId, "SourcingTemplates")) as SourcingTemplateRecord[]);
@@ -2318,6 +2353,29 @@ function assertConfigured() {
     throw new Error(`Google Sheets is not configured. Missing: ${config.missing.join(", ")}`);
   }
   return config;
+}
+
+function normalizeCampaignProfileRecord(record: CampaignProfileRecord): CampaignProfileRecord {
+  const now = new Date().toISOString();
+  const createdAt = stringValue(record.createdAt) || now;
+  const campaignName = stringValue(record.campaignName).trim() || "Untitled Campaign";
+
+  return {
+    campaignId: stringValue(record.campaignId).trim() || `campaign-${Date.now()}`,
+    campaignName,
+    campaignCode: stringValue(record.campaignCode).trim() || createCampaignCode(campaignName),
+    country: stringValue(record.country).trim(),
+    preferredLanguages: stringValue(record.preferredLanguages).trim(),
+    status: stringValue(record.status).trim() || "Active",
+    createdAt,
+    updatedAt: stringValue(record.updatedAt) || now,
+  };
+}
+
+function createCampaignCode(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (!words.length) return "CAMPAIGN";
+  return words.map((word) => word.slice(0, 4).toUpperCase()).join("-");
 }
 
 function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): CentralAppDatabase {

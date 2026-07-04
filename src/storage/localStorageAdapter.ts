@@ -46,7 +46,7 @@ export function loadCentralDatabaseFromLocalStorage(): LocalStorageLoadResult {
         diagnostics: [
           {
             level: "info",
-            message: "Loaded Katlas Buddy Database from localStorage fallback.",
+            message: "Loaded EasyKOL Processor Database from localStorage fallback.",
           },
         ],
       };
@@ -241,7 +241,7 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
   const worksheets = isRecord(source.worksheets) ? source.worksheets : {};
 
   return {
-    databaseName: "Katlas Buddy Database",
+    databaseName: "EasyKOL Processor Database",
     worksheets: {
       CampaignProfiles: normalizeArray(worksheets.CampaignProfiles, normalizeCampaignProfile),
       SourcingTemplates: normalizeArray(worksheets.SourcingTemplates, normalizeSourcingTemplate),

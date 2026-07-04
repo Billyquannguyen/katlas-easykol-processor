@@ -12,6 +12,7 @@ import {
   createOutreachTemplateInGoogleSheets,
   deleteActiveCampaignCreatorFromGoogleSheets,
   deleteAgencyDatabaseFromGoogleSheets,
+  deleteCampaignProfileFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
   deleteCampaignPromptVaultFromGoogleSheets,
   deleteCreatorDatabaseFromGoogleSheets,
@@ -38,6 +39,7 @@ import {
   saveAgencyDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
+  saveCampaignProfileToGoogleSheets,
   saveCampaignPromptVaultToGoogleSheets,
   saveCreatorDatabaseToGoogleSheets,
   saveEmployeeProfileToGoogleSheets,
@@ -196,6 +198,38 @@ export async function listCampaignProfilesFromGoogleSheetsOnly(): Promise<Campai
   if (!result.ok) {
     throw new Error(getStorageFailureMessage(result.status));
   }
+  rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function saveCampaignProfileToGoogleSheetsOnly(
+  record: CampaignProfileRecord,
+): Promise<CampaignProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-campaign-profile-start", {
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await saveCampaignProfileToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function deleteCampaignProfileFromGoogleSheetsOnly(
+  campaignId: string,
+): Promise<CampaignProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-campaign-profile-start", {
+    campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCampaignProfileFromGoogleSheets(campaignId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
   rememberCampaignProfiles(result.records);
   return result.records;
 }
@@ -768,10 +802,10 @@ function reportGoogleSheetsWriteFailure(diagnostics: StorageStatus["diagnostics"
   const message =
     diagnostics.map((diagnostic) => diagnostic.message).join("\n") ||
     "Google Sheets write failed. Local cache was not promoted to shared storage.";
-  console.error(message);
+  console.warn(message);
   if (typeof window === "undefined") return;
   window.dispatchEvent(
-    new CustomEvent("katlas-storage-error", {
+    new CustomEvent("easykol-storage-error", {
       detail: { message, diagnostics },
     }),
   );

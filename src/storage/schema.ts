@@ -1,4 +1,4 @@
-export const centralDatabaseName = "Katlas Buddy Database";
+export const centralDatabaseName = "EasyKOL Processor Database";
 
 export const centralWorksheetNames = [
   "CampaignProfiles",
@@ -14,6 +14,11 @@ export const centralWorksheetNames = [
 ] as const;
 
 export type CentralWorksheetName = (typeof centralWorksheetNames)[number];
+
+export const easyKolWorksheetNames = [
+  "SourcingTemplates",
+  "AppSettings",
+] as const satisfies readonly CentralWorksheetName[];
 
 export type CampaignProfileRecord = {
   campaignId: string;

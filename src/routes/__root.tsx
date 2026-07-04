@@ -84,13 +84,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Katlas Media Workflow Agent" },
-      { name: "description", content: "Creator sourcing workflow automation for Katlas Media." },
+      { title: "EasyKOL Processor" },
+      { name: "description", content: "EasyKOL export processing for Katlas creator sourcing." },
       { name: "author", content: "Katlas Media" },
-      { property: "og:title", content: "Katlas Media Workflow Agent" },
+      { property: "og:title", content: "EasyKOL Processor" },
       {
         property: "og:description",
-        content: "Creator sourcing workflow automation for Katlas Media.",
+        content: "EasyKOL export processing for Katlas creator sourcing.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

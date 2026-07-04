@@ -1,5 +1,5 @@
 import { useBlocker } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -12,7 +12,6 @@ import {
   Download,
   FileSpreadsheet,
   Filter,
-  Hash,
   Loader2,
   Pencil,
   Plus,
@@ -26,14 +25,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
   deleteSourcingTemplateFromGoogleSheetsOnly,
@@ -44,11 +35,7 @@ import {
   cleanupSourcingTemplateRecords,
   isActiveSourcingTemplateRecord,
 } from "@/storage/sourcingTemplates";
-import type {
-  AppSettingRecord,
-  CampaignProfileRecord,
-  SourcingTemplateRecord,
-} from "@/storage/schema";
+import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
 import {
   buildContactEnrichmentReport,
   buildPreviewRow,
@@ -68,9 +55,7 @@ import {
   easyKolFields,
   type EmailAvailability,
   type ContactEnrichmentReport,
-  type ContactField,
   type ContactInfo,
-  type CreatorEnrichmentResult,
   type EasyKolField,
   type FilterSettings,
   type PreviewRow,
@@ -93,11 +78,6 @@ const averageViewRangeOptions = [
   { key: "views-10k-100k", label: "10k-100k", min: "10000", max: "100000" },
   { key: "views-100k-plus", label: "> 100k", min: "100000", max: "" },
 ] as const;
-const emptyBillyFilters = {
-  followersMin: "",
-  followersMax: "",
-  followerRanges: [],
-} satisfies BillyFilterSettings;
 const filterSectionDefaults = {
   regions: false,
   languages: false,
@@ -106,46 +86,10 @@ const filterSectionDefaults = {
   averageViews: false,
   emailAvailability: false,
 };
-const billyFilterSectionDefaults = {
-  followers: false,
-};
-const billyExtensionMessageSource = "katlas-billy-extension";
-const billyImportHeaders = [
-  "Nickname",
-  "@Username",
-  "Description",
-  "Platform",
-  "Followers",
-  "Avg. Views",
-  "Avg. Likes",
-  "Email",
-  "Last Post",
-  "URL",
-  "Sample Video URL",
-  "Source Link",
-];
+const defaultTemplateWorkspaceId = "easykol-processor";
+const defaultTemplateWorkspaceName = "EasyKOL Processor";
 
 type FilterSectionKey = keyof typeof filterSectionDefaults;
-type BillyFilterSectionKey = keyof typeof billyFilterSectionDefaults;
-type BillyFilterSettings = {
-  followersMin: string;
-  followersMax: string;
-  followerRanges: string[];
-};
-type BillyFilterChip = {
-  key: string;
-  label: string;
-  action:
-    | {
-        type: "array";
-        field: "followerRanges";
-        value: string;
-      }
-    | {
-        type: "fields";
-        fields: Array<keyof BillyFilterSettings>;
-      };
-};
 type FilterChip = {
   key: string;
   label: string;
@@ -177,65 +121,17 @@ type RangeOption = {
   max: string;
   count: number;
 };
-type SourcingAssistantPage = "easykol" | "billy";
+type SourcingTemplateGroup = {
+  campaignId: string;
+  campaignName: string;
+  templates: SourcingTemplate[];
+  createdAt: string;
+};
 type PendingLeaveAction =
   | { type: "selectProject"; projectId: string }
-  | { type: "selectTemplate"; templateId: string }
-  | { type: "selectAssistantPage"; page: SourcingAssistantPage };
-type HashtagScrapeReport = {
-  sourceLabel: string;
-  sourceUrl: string;
-  creatorsFound: number;
-  videosFound: number;
-  duplicatesRemoved: number;
-  warnings: string[];
-};
-type HashtagScrapeResponse =
-  | {
-      ok: true;
-      platform: "tiktok";
-      hashtag?: string;
-      sourceType?: "hashtag" | "sound";
-      sourceLabel?: string;
-      headers: string[];
-      rows: Array<Record<string, string | number | boolean | null | undefined>>;
-      videosFound: number;
-      creatorsFound: number;
-      duplicatesRemoved: number;
-      warnings: string[];
-      sourceUrl: string;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
-type BillyExtensionCreator = {
-  username: string;
-  profileUrl?: string;
-  sampleVideoUrl?: string;
-  videoDescription?: string;
-  sourceLink?: string;
-  videos?: string[];
-};
-type BillyExtensionPayload = {
-  collectedAt?: string;
-  sourceLabel: string;
-  sourceUrl: string;
-  videosFound: number;
-  creators: BillyExtensionCreator[];
-};
-type PendingBillyExtensionImport = {
-  id: string;
-  payload: unknown;
-};
+  | { type: "selectTemplate"; templateId: string };
 
 export function CreatorSourcingAssistant() {
-  const [assistantPage, setAssistantPage] = useState<SourcingAssistantPage>(
-    getInitialSourcingAssistantPage,
-  );
-  const [pendingBillyExtensionImport, setPendingBillyExtensionImport] =
-    useState<PendingBillyExtensionImport | null>(null);
-  const [billyHasActiveWorkingData, setBillyHasActiveWorkingData] = useState(false);
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -287,8 +183,7 @@ export function CreatorSourcingAssistant() {
   const hasActiveWorkingData = Boolean(
     sourceFileName || headers.length > 0 || creators.length > 0 || previewReady,
   );
-  const shouldConfirmBeforeLeaving =
-    hasActiveWorkingData || billyHasActiveWorkingData || templateHasUnsavedChanges;
+  const shouldConfirmBeforeLeaving = hasActiveWorkingData || templateHasUnsavedChanges;
   const routeBlocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
       current.pathname === "/creator-sourcing" &&
@@ -297,34 +192,6 @@ export function CreatorSourcingAssistant() {
     enableBeforeUnload: shouldConfirmBeforeLeaving,
     withResolver: true,
   });
-
-  useEffect(() => {
-    function handleHashChange() {
-      const nextPage = getSourcingAssistantPageFromHash();
-      if (nextPage) setAssistantPage(nextPage);
-    }
-
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
-
-  useEffect(() => {
-    function handleBillyExtensionMessage(event: MessageEvent) {
-      if (event.source !== window || !isRecord(event.data)) return;
-      if (event.data.source !== billyExtensionMessageSource) return;
-      if (event.data.type !== "BILLY_IMPORT") return;
-
-      setAssistantPage("billy");
-      updateSourcingAssistantHash("billy");
-      setPendingBillyExtensionImport({
-        id: createId("billy-extension-import"),
-        payload: event.data.payload,
-      });
-    }
-
-    window.addEventListener("message", handleBillyExtensionMessage);
-    return () => window.removeEventListener("message", handleBillyExtensionMessage);
-  }, []);
 
   const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
   const filteredCreators = useMemo(
@@ -416,12 +283,19 @@ export function CreatorSourcingAssistant() {
           error instanceof Error
             ? error.message
             : "Google Sheets database is unavailable. Sourcing templates were not loaded.";
-        console.error(message);
-        setErrorMessage(message);
-        setProjects([]);
-        setActiveProjectId("");
-        setDraftTemplate([]);
-        setDraftTemplateName("");
+        const fallbackProjects = loadProjects({
+          worksheets: {
+            AppSettings: [],
+            SourcingTemplates: [],
+          },
+        });
+        const fallbackProject = fallbackProjects[0];
+        console.warn(message);
+        setErrorMessage(`${message} Using the built-in default template.`);
+        setProjects(fallbackProjects);
+        setActiveProjectId(fallbackProject?.campaignId ?? "");
+        setDraftTemplate(cloneTemplate(fallbackProject?.template ?? []));
+        setDraftTemplateName(fallbackProject?.templateName ?? "");
         setProjectsLoaded(true);
       } finally {
         if (requestId === templateLoadRequestRef.current) setIsLoadingTemplates(false);
@@ -493,7 +367,7 @@ export function CreatorSourcingAssistant() {
     activeCampaignIdRef.current = projectId;
     resetForCampaignChange(nextProject);
     setActiveProjectId(projectId);
-    setStatusMessage("Campaign changed.");
+    setStatusMessage("Template group changed.");
   }
 
   function requestTemplateChange(templateId: string) {
@@ -554,7 +428,7 @@ export function CreatorSourcingAssistant() {
         error instanceof Error
           ? error.message
           : "Google Sheets save failed. Template was not saved.";
-      console.error(message);
+      console.warn(message);
       setErrorMessage(message);
       setTemplateMessage("Template was not saved to Google Sheets.");
       return false;
@@ -589,7 +463,7 @@ export function CreatorSourcingAssistant() {
         error instanceof Error
           ? error.message
           : "Google Sheets delete failed. Template was not deleted.";
-      console.error(message);
+      console.warn(message);
       setErrorMessage(message);
       setTemplateMessage("Template was not deleted from Google Sheets.");
       return false;
@@ -598,7 +472,7 @@ export function CreatorSourcingAssistant() {
     }
   }
 
-  function createNewTemplate() {
+  async function createNewTemplate() {
     if (!activeProject) return;
     const now = new Date().toISOString();
     const nextTemplate: SourcingTemplate = {
@@ -616,22 +490,13 @@ export function CreatorSourcingAssistant() {
       clearMessages: true,
       closeTemplateUi: false,
     });
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.campaignId !== activeProject.campaignId) return project;
-        return activateProjectTemplate(
-          {
-            ...project,
-            templates: [...project.templates, nextTemplate],
-          },
-          nextTemplate.id,
-        );
-      }),
-    );
     setDraftTemplate(cloneTemplate(nextTemplate.columns));
     setDraftTemplateName(nextTemplate.templateName);
-    setTemplateMessage("New template created. Edit and save it when ready.");
-    setIsTemplateModalOpen(true);
+    const saved = await persistSourcingTemplate(
+      nextTemplate,
+      "New template created in Google Sheets.",
+    );
+    if (saved) setIsTemplateModalOpen(true);
   }
 
   async function duplicateSourcingTemplate(templateId: string) {
@@ -733,10 +598,6 @@ export function CreatorSourcingAssistant() {
     if (!pendingLeaveAction) return;
     const action = pendingLeaveAction;
     setPendingLeaveAction(null);
-    if (action.type === "selectAssistantPage") {
-      switchAssistantPage(action.page);
-      return;
-    }
     if (action.type === "selectTemplate") {
       switchTemplate(action.templateId);
       return;
@@ -751,7 +612,6 @@ export function CreatorSourcingAssistant() {
       clearMessages: true,
       closeTemplateUi: true,
     });
-    setBillyHasActiveWorkingData(false);
     routeBlocker.proceed?.();
   }
 
@@ -790,7 +650,7 @@ export function CreatorSourcingAssistant() {
 
   async function enrichContacts() {
     if (!activeProject) {
-      setErrorMessage("Select a campaign first.");
+      setErrorMessage("Templates are still loading.");
       return;
     }
     if (creators.length === 0) {
@@ -818,34 +678,13 @@ export function CreatorSourcingAssistant() {
         columnMap,
       });
 
-      let enrichmentResults = result.results;
-      let aiStatusMessage = "";
-      try {
-        setStatusMessage("Fetching public links...");
-        await wait(220);
-        setStatusMessage("Extracting contacts with AI...");
-        const aiResult = await enrichContactsWithAI(filteredCreators);
-        enrichmentResults = mergeAIEnrichmentResults(result.results, aiResult.results);
-        aiStatusMessage =
-          aiResult.skipped > 0
-            ? ` AI checked ${aiResult.processed} creators. ${aiResult.skipped} skipped by batch limit.`
-            : ` AI checked ${aiResult.processed} creators.`;
-      } catch (error) {
-        aiStatusMessage =
-          error instanceof Error
-            ? ` OpenRouter enrichment unavailable: ${error.message}`
-            : " OpenRouter enrichment unavailable.";
-      }
-
       setStatusMessage("Generating Contacts...");
       await wait(220);
       setContactInfoByCreatorId(
-        Object.fromEntries(
-          enrichmentResults.map((row) => [row.creatorId, row.contactInfo] as const),
-        ),
+        Object.fromEntries(result.results.map((row) => [row.creatorId, row.contactInfo] as const)),
       );
-      setEnrichmentReport(buildContactEnrichmentReport(enrichmentResults));
-      setStatusMessage(`Done.${aiStatusMessage}`);
+      setEnrichmentReport(buildContactEnrichmentReport(result.results));
+      setStatusMessage("Done. Contacts extracted from EasyKOL fields.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
       setStatusMessage("");
@@ -856,7 +695,7 @@ export function CreatorSourcingAssistant() {
 
   async function preparePreview() {
     if (!activeProject) {
-      setErrorMessage("Select a campaign first.");
+      setErrorMessage("Templates are still loading.");
       return;
     }
     if (creators.length === 0) {
@@ -1051,10 +890,7 @@ export function CreatorSourcingAssistant() {
       createdAt: activeTemplate?.createdAt || savedAt,
       updatedAt: savedAt,
     };
-    const saved = await persistSourcingTemplate(
-      templateToSave,
-      "Template saved to Google Sheets for this campaign.",
-    );
+    const saved = await persistSourcingTemplate(templateToSave, "Template saved to Google Sheets.");
     if (saved) setIsTemplateModalOpen(false);
   }
 
@@ -1182,20 +1018,6 @@ export function CreatorSourcingAssistant() {
     setSelectedRowIds(previewRows.map((row) => row.id));
   }
 
-  function changeAssistantPage(nextPage: SourcingAssistantPage) {
-    if (nextPage === assistantPage) return;
-    if (assistantPage === "billy" && billyHasActiveWorkingData) {
-      setPendingLeaveAction({ type: "selectAssistantPage", page: nextPage });
-      return;
-    }
-    switchAssistantPage(nextPage);
-  }
-
-  function switchAssistantPage(nextPage: SourcingAssistantPage) {
-    setAssistantPage(nextPage);
-    updateSourcingAssistantHash(nextPage);
-  }
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
@@ -1206,330 +1028,313 @@ export function CreatorSourcingAssistant() {
           <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Creator Sourcing Assistant
+                EasyKOL Processor
               </p>
               <h1 className="mt-3 max-w-3xl text-3xl font-medium leading-tight tracking-tight md:text-4xl">
-                {assistantPage === "easykol"
-                  ? "EasyKOL Scraping Processor"
-                  : "Billy's Scraper System"}
+                EasyKOL Scraping Processor
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {assistantPage === "easykol"
-                  ? "Upload the EasyKOL export, filter the creators, generate contacts, then preview the exact columns you want to paste into a sourcing sheet."
-                  : "Scrape a TikTok hashtag on its own page, dedupe creators, filter the list, then export rows without touching the EasyKOL upload flow."}
+                Upload the EasyKOL export, filter the creators, extract contacts, then preview the
+                exact columns you want to paste into a sourcing sheet.
               </p>
             </div>
           </div>
         </section>
 
-        <SourcingAssistantPagination page={assistantPage} onPageChange={changeAssistantPage} />
+        <>
+          {statusMessage || copyMessage || errorMessage ? (
+            <section className="space-y-2">
+              {statusMessage ? (
+                <div className="katlas-status-line flex items-center gap-2">
+                  <Check className="size-4 text-emerald-400" />
+                  {statusMessage}
+                </div>
+              ) : null}
+              {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
+              {errorMessage ? (
+                <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {errorMessage}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
-        {assistantPage === "easykol" ? (
-          <>
-            {statusMessage || copyMessage || errorMessage ? (
-              <section className="space-y-2">
-                {statusMessage ? (
-                  <div className="katlas-status-line flex items-center gap-2">
-                    <Check className="size-4 text-emerald-400" />
-                    {statusMessage}
-                  </div>
-                ) : null}
-                {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
-                {errorMessage ? (
-                  <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {errorMessage}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-              <aside className="flex min-w-0 flex-col gap-5">
-                <Panel title="Campaign" icon={ClipboardList}>
-                  {projects.length > 0 ? (
-                    <>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Campaign From Campaign Profiles
-                        </label>
-                        <select
-                          value={activeProjectId}
-                          onChange={(event) => requestProjectChange(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                        >
-                          {projects.map((project) => (
-                            <option key={project.campaignId} value={project.campaignId}>
-                              {project.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mt-3">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Saved Sourcing Template
-                        </label>
-                        <select
-                          value={activeProject?.activeTemplateId ?? ""}
-                          onChange={(event) => requestTemplateChange(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                        >
-                          {activeProject?.templates.map((templateItem) => (
-                            <option key={templateItem.id} value={templateItem.id}>
-                              {templateItem.templateName}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button
-                          onClick={createNewTemplate}
-                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Plus className="size-4" />
-                          New
-                        </button>
-                        <button
-                          onClick={() => setIsTemplateModalOpen(true)}
-                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Columns3 className="size-4" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setIsTemplateManagerOpen(true)}
-                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Pencil className="size-4" />
-                          Manage
-                        </button>
-                        <button
-                          onClick={resetTemplate}
-                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <RotateCcw className="size-4" />
-                          Reset
-                        </button>
-                      </div>
-                      <TemplateStatus
-                        columnCount={activeProject?.template.length ?? 0}
-                        templateName={activeProject?.templateName ?? ""}
-                        savedAt={activeProject?.templateSavedAt}
-                        hasUnsavedChanges={templateHasUnsavedChanges}
-                        message={
-                          isLoadingTemplates
-                            ? "Loading templates from Google Sheets..."
-                            : isSavingTemplates
-                              ? "Saving to Google Sheets..."
-                              : templateMessage
-                        }
-                      />
-                    </>
-                  ) : (
-                    <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                      Create campaigns in Campaign Profiles first. Sourcing templates attach to
-                      those campaign records.
-                    </p>
-                  )}
-                </Panel>
-
-                <Panel title="Upload" icon={Upload}>
-                  <label
-                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition ${
-                      activeProject
-                        ? "cursor-pointer border-border bg-background hover:border-ring"
-                        : "cursor-not-allowed border-border bg-muted/60 opacity-75"
-                    }`}
-                  >
-                    <FileSpreadsheet className="size-7 text-muted-foreground" />
-                    <span className="mt-3 text-sm font-medium">
-                      {isUploading
-                        ? "Reading file..."
-                        : activeProject
-                          ? "Upload EasyKOL Excel or CSV"
-                          : "Select a campaign before uploading"}
-                    </span>
-                    <span className="mt-1 text-xs text-muted-foreground">
-                      The app automatically reads the second worksheet.
-                    </span>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      className="hidden"
-                      disabled={!activeProject || isUploading}
-                      onChange={(event) => {
-                        void handleUpload(event.target.files?.[0]);
-                        event.currentTarget.value = "";
-                      }}
+          <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
+            <aside className="flex min-w-0 flex-col gap-5">
+              <Panel title="Templates" icon={ClipboardList}>
+                {projects.length > 0 ? (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Template Group
+                      </label>
+                      <select
+                        value={activeProjectId}
+                        onChange={(event) => requestProjectChange(event.target.value)}
+                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                      >
+                        {projects.map((project) => (
+                          <option key={project.campaignId} value={project.campaignId}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-3">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Saved Sourcing Template
+                      </label>
+                      <select
+                        value={activeProject?.activeTemplateId ?? ""}
+                        onChange={(event) => requestTemplateChange(event.target.value)}
+                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                      >
+                        {activeProject?.templates.map((templateItem) => (
+                          <option key={templateItem.id} value={templateItem.id}>
+                            {templateItem.templateName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={createNewTemplate}
+                        disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Plus className="size-4" />
+                        New
+                      </button>
+                      <button
+                        onClick={() => setIsTemplateModalOpen(true)}
+                        disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Columns3 className="size-4" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setIsTemplateManagerOpen(true)}
+                        disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Pencil className="size-4" />
+                        Manage
+                      </button>
+                      <button
+                        onClick={resetTemplate}
+                        disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <RotateCcw className="size-4" />
+                        Reset
+                      </button>
+                    </div>
+                    <TemplateStatus
+                      columnCount={activeProject?.template.length ?? 0}
+                      templateName={activeProject?.templateName ?? ""}
+                      savedAt={activeProject?.templateSavedAt}
+                      hasUnsavedChanges={templateHasUnsavedChanges}
+                      message={
+                        isLoadingTemplates
+                          ? "Loading templates from Google Sheets..."
+                          : isSavingTemplates
+                            ? "Saving to Google Sheets..."
+                            : templateMessage
+                      }
                     />
-                  </label>
+                  </>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Templates are still loading. The processor can use the built-in default once
+                    loading finishes.
+                  </p>
+                )}
+              </Panel>
 
-                  {sourceFileName && (
-                    <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+              <Panel title="Upload" icon={Upload}>
+                <label
+                  className={`flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition ${
+                    activeProject
+                      ? "cursor-pointer border-border bg-background hover:border-ring"
+                      : "cursor-not-allowed border-border bg-muted/60 opacity-75"
+                  }`}
+                >
+                  <FileSpreadsheet className="size-7 text-muted-foreground" />
+                  <span className="mt-3 text-sm font-medium">
+                    {isUploading
+                      ? "Reading file..."
+                      : activeProject
+                        ? "Upload EasyKOL Excel or CSV"
+                        : "Templates are still loading"}
+                  </span>
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    The app automatically reads the second worksheet.
+                  </span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    disabled={!activeProject || isUploading}
+                    onChange={(event) => {
+                      void handleUpload(event.target.files?.[0]);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+
+                {sourceFileName && (
+                  <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+                    <div>
+                      <p className="font-medium uppercase text-muted-foreground">Current File</p>
+                      <p className="mt-1 truncate font-medium text-foreground">{sourceFileName}</p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
                       <div>
-                        <p className="font-medium uppercase text-muted-foreground">Current File</p>
-                        <p className="mt-1 truncate font-medium text-foreground">
-                          {sourceFileName}
+                        <p className="font-medium uppercase text-muted-foreground">
+                          Creators Loaded
+                        </p>
+                        <p className="mt-1 font-medium text-foreground">
+                          {creators.length.toLocaleString()}
                         </p>
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                        <div>
-                          <p className="font-medium uppercase text-muted-foreground">
-                            Creators Loaded
-                          </p>
-                          <p className="mt-1 font-medium text-foreground">
-                            {creators.length.toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium uppercase text-muted-foreground">Worksheet</p>
-                          <p className="mt-1 truncate font-medium text-foreground">
-                            {sheetName || "Second worksheet"}
-                          </p>
-                        </div>
+                      <div>
+                        <p className="font-medium uppercase text-muted-foreground">Worksheet</p>
+                        <p className="mt-1 truncate font-medium text-foreground">
+                          {sheetName || "Second worksheet"}
+                        </p>
                       </div>
                     </div>
-                  )}
-                </Panel>
-
-                <Panel title="Filters" icon={Filter}>
-                  <EasyKolFilters
-                    filters={filters}
-                    openSections={openFilterSections}
-                    regionCounts={regionCounts}
-                    languageCounts={languageCounts}
-                    platformCounts={platformCounts}
-                    followersRanges={followersRanges}
-                    averageViewRanges={averageViewRanges}
-                    emailAvailabilityCounts={emailAvailabilityCounts}
-                    customRanges={customRanges}
-                    onToggleSection={toggleFilterSection}
-                    onToggleRegion={(value) => toggleArrayFilter("regions", "region", value)}
-                    onToggleLanguage={(value) => toggleArrayFilter("languages", "language", value)}
-                    onTogglePlatform={(value) => toggleArrayFilter("platforms", "platform", value)}
-                    onPresetRange={togglePresetRange}
-                    onCustomRangeChange={(patch) =>
-                      setCustomRanges((current) => ({ ...current, ...patch }))
-                    }
-                    onApplyCustomRange={applyCustomRange}
-                    onEmailAvailability={toggleEmailAvailability}
-                  />
-                </Panel>
-              </aside>
-
-              <div className="flex min-w-0 flex-col gap-5">
-                <Panel
-                  key={`${activeProjectId}:${activeTemplateId}:preview`}
-                  title="Preview"
-                  icon={Sparkles}
-                >
-                  {activeFilterChips.length > 0 ? (
-                    <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
-                  ) : null}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {filteredCreators.length.toLocaleString()} of{" "}
-                        {creators.length.toLocaleString()} creators match the current filters
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Preview shows only the columns from the selected sourcing template.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={enrichContacts}
-                        disabled={
-                          isEnrichingContacts ||
-                          isProcessing ||
-                          !activeProject ||
-                          creators.length === 0
-                        }
-                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isEnrichingContacts ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-4" />
-                        )}
-                        Enrich Contacts
-                      </button>
-                      <button
-                        onClick={preparePreview}
-                        disabled={
-                          isProcessing ||
-                          isEnrichingContacts ||
-                          !activeProject ||
-                          creators.length === 0
-                        }
-                        className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isProcessing ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-4" />
-                        )}
-                        Prepare Preview
-                      </button>
-                      <button
-                        onClick={() => setIsPreviewModalOpen(true)}
-                        disabled={!previewReady || previewRows.length === 0}
-                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <FileSpreadsheet className="size-4" />
-                        Open Preview
-                      </button>
-                      <button
-                        onClick={() => copyRows(previewRows, "All rows")}
-                        disabled={!previewReady || previewRows.length === 0}
-                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Copy className="size-4" />
-                        Copy All Rows
-                      </button>
-                      <button
-                        onClick={downloadPreview}
-                        disabled={!previewReady || previewRows.length === 0}
-                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Download className="size-4" />
-                        Download Modified Sheet
-                      </button>
-                    </div>
                   </div>
+                )}
+              </Panel>
 
-                  <PreviewMetrics
-                    imported={creators.length}
-                    filtered={filteredCreators.length}
-                    withContact={creatorsWithContact}
-                    withoutContact={creatorsWithoutContact}
-                  />
+              <Panel title="Filters" icon={Filter}>
+                <EasyKolFilters
+                  filters={filters}
+                  openSections={openFilterSections}
+                  regionCounts={regionCounts}
+                  languageCounts={languageCounts}
+                  platformCounts={platformCounts}
+                  followersRanges={followersRanges}
+                  averageViewRanges={averageViewRanges}
+                  emailAvailabilityCounts={emailAvailabilityCounts}
+                  customRanges={customRanges}
+                  onToggleSection={toggleFilterSection}
+                  onToggleRegion={(value) => toggleArrayFilter("regions", "region", value)}
+                  onToggleLanguage={(value) => toggleArrayFilter("languages", "language", value)}
+                  onTogglePlatform={(value) => toggleArrayFilter("platforms", "platform", value)}
+                  onPresetRange={togglePresetRange}
+                  onCustomRangeChange={(patch) =>
+                    setCustomRanges((current) => ({ ...current, ...patch }))
+                  }
+                  onApplyCustomRange={applyCustomRange}
+                  onEmailAvailability={toggleEmailAvailability}
+                />
+              </Panel>
+            </aside>
 
-                  {enrichmentReport ? (
-                    <ContactEnrichmentReportPanel report={enrichmentReport} />
-                  ) : null}
+            <div className="flex min-w-0 flex-col gap-5">
+              <Panel
+                key={`${activeProjectId}:${activeTemplateId}:preview`}
+                title="Preview"
+                icon={Sparkles}
+              >
+                {activeFilterChips.length > 0 ? (
+                  <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
+                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {filteredCreators.length.toLocaleString()} of{" "}
+                      {creators.length.toLocaleString()} creators match the current filters
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Preview shows only the columns from the selected sourcing template.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={enrichContacts}
+                      disabled={
+                        isEnrichingContacts ||
+                        isProcessing ||
+                        !activeProject ||
+                        creators.length === 0
+                      }
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isEnrichingContacts ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                      Enrich Contacts
+                    </button>
+                    <button
+                      onClick={preparePreview}
+                      disabled={
+                        isProcessing ||
+                        isEnrichingContacts ||
+                        !activeProject ||
+                        creators.length === 0
+                      }
+                      className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isProcessing ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                      Prepare Preview
+                    </button>
+                    <button
+                      onClick={() => setIsPreviewModalOpen(true)}
+                      disabled={!previewReady || previewRows.length === 0}
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <FileSpreadsheet className="size-4" />
+                      Open Preview
+                    </button>
+                    <button
+                      onClick={() => copyRows(previewRows, "All rows")}
+                      disabled={!previewReady || previewRows.length === 0}
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Copy className="size-4" />
+                      Copy All Rows
+                    </button>
+                    <button
+                      onClick={downloadPreview}
+                      disabled={!previewReady || previewRows.length === 0}
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Download className="size-4" />
+                      Download Modified Sheet
+                    </button>
+                  </div>
+                </div>
 
-                  {!previewReady ? (
-                    <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                      Prepare Preview to open the Excel-style output table.
-                    </div>
-                  ) : null}
-                </Panel>
-              </div>
-            </section>
-          </>
-        ) : (
-          <BillyScraperSystem
-            projects={projects}
-            isLoadingTemplates={isLoadingTemplates}
-            pendingExtensionImport={pendingBillyExtensionImport}
-            onExtensionImportHandled={() => setPendingBillyExtensionImport(null)}
-            onWorkingDataChange={setBillyHasActiveWorkingData}
-          />
-        )}
+                <PreviewMetrics
+                  imported={creators.length}
+                  filtered={filteredCreators.length}
+                  withContact={creatorsWithContact}
+                  withoutContact={creatorsWithoutContact}
+                />
+
+                {enrichmentReport ? (
+                  <ContactEnrichmentReportPanel report={enrichmentReport} />
+                ) : null}
+
+                {!previewReady ? (
+                  <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
+                    Prepare Preview to open the Excel-style output table.
+                  </div>
+                ) : null}
+              </Panel>
+            </div>
+          </section>
+        </>
       </main>
 
       {isTemplateModalOpen && activeProject ? (
@@ -1582,14 +1387,7 @@ export function CreatorSourcingAssistant() {
       {pendingLeaveAction || routeBlocker.status === "blocked" ? (
         <LeaveProjectModal
           hasUnsavedTemplateChanges={templateHasUnsavedChanges}
-          workingDataKind={assistantPage === "billy" ? "billy" : "easykol"}
-          actionLabel={
-            pendingLeaveAction?.type === "selectAssistantPage"
-              ? "Switch Page"
-              : pendingLeaveAction
-                ? "Leave Campaign"
-                : "Leave Page"
-          }
+          actionLabel={pendingLeaveAction ? "Leave Template Group" : "Leave Page"}
           onStay={() => {
             if (pendingLeaveAction) {
               setPendingLeaveAction(null);
@@ -1599,901 +1397,6 @@ export function CreatorSourcingAssistant() {
           }}
           onLeave={pendingLeaveAction ? confirmPendingLeave : confirmRouteLeave}
         />
-      ) : null}
-    </div>
-  );
-}
-
-function SourcingAssistantPagination({
-  page,
-  onPageChange,
-}: {
-  page: SourcingAssistantPage;
-  onPageChange: (page: SourcingAssistantPage) => void;
-}) {
-  const pages: Array<{ id: SourcingAssistantPage; label: string; pageNumber: number }> = [
-    { id: "easykol", label: "EasyKOL", pageNumber: 1 },
-    { id: "billy", label: "Billy", pageNumber: 2 },
-  ];
-  const currentIndex = pages.findIndex((item) => item.id === page);
-  const previousPage = pages[Math.max(currentIndex - 1, 0)]?.id ?? page;
-  const nextPage = pages[Math.min(currentIndex + 1, pages.length - 1)]?.id ?? page;
-
-  function switchPage(nextPageId: SourcingAssistantPage) {
-    onPageChange(nextPageId);
-  }
-
-  return (
-    <Pagination className="justify-start">
-      <PaginationContent className="rounded-lg border border-border bg-card p-1">
-        <PaginationItem>
-          <PaginationPrevious
-            href="#"
-            aria-disabled={page === "easykol"}
-            className={page === "easykol" ? "pointer-events-none opacity-50" : ""}
-            onClick={(event) => {
-              event.preventDefault();
-              switchPage(previousPage);
-            }}
-          />
-        </PaginationItem>
-        {pages.map((item) => (
-          <PaginationItem key={item.id}>
-            <PaginationLink
-              href="#"
-              isActive={page === item.id}
-              aria-label={`Open ${item.label} page`}
-              onClick={(event) => {
-                event.preventDefault();
-                switchPage(item.id);
-              }}
-            >
-              {item.pageNumber}
-            </PaginationLink>
-          </PaginationItem>
-        ))}
-        <PaginationItem>
-          <PaginationNext
-            href="#"
-            aria-disabled={page === "billy"}
-            className={page === "billy" ? "pointer-events-none opacity-50" : ""}
-            onClick={(event) => {
-              event.preventDefault();
-              switchPage(nextPage);
-            }}
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  );
-}
-
-function BillyScraperSystem({
-  projects,
-  isLoadingTemplates,
-  pendingExtensionImport,
-  onExtensionImportHandled,
-  onWorkingDataChange,
-}: {
-  projects: SourcingProject[];
-  isLoadingTemplates: boolean;
-  pendingExtensionImport: PendingBillyExtensionImport | null;
-  onExtensionImportHandled: () => void;
-  onWorkingDataChange: (hasWorkingData: boolean) => void;
-}) {
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [hashtagInput, setHashtagInput] = useState("");
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [creators, setCreators] = useState<UploadedCreator[]>([]);
-  const [filters, setFilters] = useState<BillyFilterSettings>(() => createBillyFilters());
-  const [openFilterSections, setOpenFilterSections] = useState<
-    Record<BillyFilterSectionKey, boolean>
-  >(() => ({ ...billyFilterSectionDefaults }));
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
-  const [previewReady, setPreviewReady] = useState(false);
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-  const [isScraping, setIsScraping] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
-  const [copyMessage, setCopyMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [scrapeReport, setScrapeReport] = useState<HashtagScrapeReport | null>(null);
-  const hasActiveWorkingData = Boolean(
-    hashtagInput.trim() ||
-    headers.length > 0 ||
-    creators.length > 0 ||
-    previewReady ||
-    scrapeReport,
-  );
-
-  const activeProject =
-    projects.find((project) => project.campaignId === selectedCampaignId) ?? projects[0];
-  const activeTemplate =
-    activeProject?.templates.find((templateItem) => templateItem.id === selectedTemplateId) ??
-    activeProject?.templates.find(
-      (templateItem) => templateItem.id === activeProject.activeTemplateId,
-    ) ??
-    activeProject?.templates[0];
-  const template = useMemo(() => activeTemplate?.columns ?? [], [activeTemplate]);
-  const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
-  const filteredCreators = useMemo(
-    () => filterBillyCreators(creators, filters),
-    [creators, filters],
-  );
-  const followerRanges = useMemo(
-    () => getBillyMetricRangeCounts(creators, "Followers", followersRangeOptions),
-    [creators],
-  );
-  const activeFilterChips = useMemo(() => getActiveBillyFilterChips(filters), [filters]);
-  const previewHeaders = useMemo(
-    () => [
-      ...template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
-      "Bio",
-      "Sample Video URL",
-      "Source Link",
-    ],
-    [template],
-  );
-  const previewRows = useMemo(
-    () =>
-      filteredCreators.map((creator) => {
-        const baseRow = buildPreviewRow({
-          id: creator.id,
-          data: creator.data,
-          columnMap,
-          template,
-        });
-        return {
-          ...baseRow,
-          values: [
-            ...baseRow.values,
-            stringValue(creator.data.Description),
-            stringValue(creator.data["Sample Video URL"]),
-            stringValue(creator.data["Source Link"]),
-          ],
-        };
-      }),
-    [filteredCreators, columnMap, template],
-  );
-  const selectedPreviewRows = useMemo(
-    () => previewRows.filter((row) => selectedRowIds.includes(row.id)),
-    [previewRows, selectedRowIds],
-  );
-
-  useEffect(() => {
-    onWorkingDataChange(hasActiveWorkingData);
-    return () => onWorkingDataChange(false);
-  }, [hasActiveWorkingData, onWorkingDataChange]);
-
-  useEffect(() => {
-    if (!projects.length) {
-      setSelectedCampaignId("");
-      return;
-    }
-    if (
-      !selectedCampaignId ||
-      !projects.some((project) => project.campaignId === selectedCampaignId)
-    ) {
-      setSelectedCampaignId(projects[0]?.campaignId ?? "");
-    }
-  }, [projects, selectedCampaignId]);
-
-  useEffect(() => {
-    if (!activeProject) {
-      setSelectedTemplateId("");
-      return;
-    }
-    const templateExists = activeProject.templates.some(
-      (templateItem) => templateItem.id === selectedTemplateId,
-    );
-    if (!selectedTemplateId || !templateExists) {
-      setSelectedTemplateId(activeProject.activeTemplateId || activeProject.templates[0]?.id || "");
-    }
-  }, [activeProject, selectedTemplateId]);
-
-  useEffect(() => {
-    setPreviewReady(false);
-    setSelectedRowIds([]);
-  }, [creators, filters, selectedTemplateId]);
-
-  const loadBillyRows = useCallback(
-    ({
-      headers: nextHeaders,
-      rows,
-      sourceLabel,
-      sourceUrl,
-      videosFound,
-      duplicatesRemoved,
-      warnings,
-      verb = "Loaded",
-    }: {
-      headers: string[];
-      rows: Array<Record<string, string | number | boolean | null | undefined>>;
-      sourceLabel: string;
-      sourceUrl: string;
-      videosFound: number;
-      duplicatesRemoved: number;
-      warnings: string[];
-      verb?: string;
-    }) => {
-      const importId = `${sourceLabel}-${Date.now()}`;
-      const nextCreators = rows.map((row, index) => ({
-        id: `billy-${importId}-${index}`,
-        data: row,
-      }));
-
-      setHeaders(nextHeaders);
-      setCreators(nextCreators);
-      setSelectedRowIds([]);
-      setPreviewReady(false);
-      setScrapeReport({
-        sourceLabel,
-        sourceUrl,
-        creatorsFound: nextCreators.length,
-        videosFound,
-        duplicatesRemoved,
-        warnings,
-      });
-      setStatusMessage(
-        `${verb} ${nextCreators.length.toLocaleString()} creators from ${sourceLabel}.`,
-      );
-      setCopyMessage(warnings[0] ?? "");
-    },
-    [],
-  );
-
-  const importExtensionPayload = useCallback(
-    async (rawPayload: unknown) => {
-      const payload = parseBillyExtensionPayload(rawPayload);
-      if (!payload || payload.creators.length === 0) {
-        setErrorMessage("Billy did not receive any TikTok creators from the extension.");
-        return;
-      }
-
-      setIsScraping(true);
-      setStatusMessage(
-        `Importing ${payload.creators.length.toLocaleString()} creators from the extension...`,
-      );
-      setErrorMessage("");
-      setCopyMessage("");
-      setScrapeReport(null);
-
-      try {
-        const response = await fetch("/api/sourcing/tiktok-profiles", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const result = (await response.json().catch(() => ({
-          ok: false,
-          error: "Billy profile import returned an invalid response.",
-        }))) as HashtagScrapeResponse;
-
-        if (!response.ok || !result.ok) {
-          throw new Error(result.ok ? "Billy profile import failed." : result.error);
-        }
-
-        loadBillyRows({
-          headers: result.headers,
-          rows: result.rows,
-          sourceLabel: result.sourceLabel ?? payload.sourceLabel,
-          sourceUrl: result.sourceUrl || payload.sourceUrl,
-          videosFound: result.videosFound,
-          duplicatesRemoved: result.duplicatesRemoved,
-          warnings: result.warnings,
-          verb: "Imported",
-        });
-      } catch (error) {
-        const fallbackRows = createBillyRowsFromExtensionPayload(payload);
-        loadBillyRows({
-          headers: billyImportHeaders,
-          rows: fallbackRows,
-          sourceLabel: payload.sourceLabel,
-          sourceUrl: payload.sourceUrl,
-          videosFound: payload.videosFound,
-          duplicatesRemoved: Math.max(payload.creators.length - fallbackRows.length, 0),
-          warnings: [
-            error instanceof Error
-              ? `Profile enrichment failed. Billy kept the collected links. ${error.message}`
-              : "Profile enrichment failed. Billy kept the collected links.",
-          ],
-          verb: "Imported",
-        });
-      } finally {
-        setIsScraping(false);
-      }
-    },
-    [loadBillyRows],
-  );
-
-  useEffect(() => {
-    if (!pendingExtensionImport) return;
-    void importExtensionPayload(pendingExtensionImport.payload);
-    onExtensionImportHandled();
-  }, [importExtensionPayload, onExtensionImportHandled, pendingExtensionImport]);
-
-  async function scrapeHashtag() {
-    const sourceInput = normalizeBillySourceInput(hashtagInput);
-    if (!sourceInput) {
-      setErrorMessage("Enter a hashtag or TikTok sound link first.");
-      return;
-    }
-
-    setIsScraping(true);
-    setStatusMessage(`Scraping ${sourceInput}...`);
-    setErrorMessage("");
-    setCopyMessage("");
-    setScrapeReport(null);
-
-    try {
-      const response = await fetch("/api/sourcing/hashtag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          platform: "tiktok",
-          source: sourceInput,
-          maxResults: 1000,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({
-        ok: false,
-        error: "Billy scraper returned an invalid response.",
-      }))) as HashtagScrapeResponse;
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.ok ? "Billy scrape failed." : payload.error);
-      }
-
-      const sourceLabel = payload.sourceLabel ?? `#${payload.hashtag}`;
-      loadBillyRows({
-        headers: payload.headers,
-        rows: payload.rows,
-        sourceLabel,
-        sourceUrl: payload.sourceUrl,
-        videosFound: payload.videosFound,
-        duplicatesRemoved: payload.duplicatesRemoved,
-        warnings: payload.warnings,
-        verb: "Loaded",
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Billy scrape failed.");
-      setStatusMessage("");
-    } finally {
-      setIsScraping(false);
-    }
-  }
-
-  async function preparePreview() {
-    if (!activeProject) {
-      setErrorMessage("Select a campaign first.");
-      return;
-    }
-    if (!creators.length) {
-      setErrorMessage("Scrape a hashtag or sound link first.");
-      return;
-    }
-    if (!template.length) {
-      setErrorMessage("Select a sourcing template first.");
-      return;
-    }
-
-    const missingTemplateFields = getMissingTemplateSourceFields(template, columnMap);
-    if (missingTemplateFields.length > 0) {
-      setErrorMessage(
-        `The selected template uses fields Billy's rows do not have: ${missingTemplateFields.join(
-          ", ",
-        )}. Pick a simpler template for this scraper.`,
-      );
-      return;
-    }
-
-    setIsProcessing(true);
-    setErrorMessage("");
-    setCopyMessage("");
-
-    for (const message of ["Applying Filters...", "Applying Template...", "Preparing Preview..."]) {
-      setStatusMessage(message);
-      await wait(220);
-    }
-
-    setPreviewReady(true);
-    setIsProcessing(false);
-    setStatusMessage(`Preview ready with ${previewRows.length.toLocaleString()} creators.`);
-  }
-
-  async function copyRows(rows: PreviewRow[], label: string) {
-    if (rows.length === 0) return;
-    const text = rows.map((row) => row.values.map(formatTsvCell).join("\t")).join("\n");
-
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyMessage(`${label} copied without headers.`);
-      setErrorMessage("");
-    } catch {
-      setErrorMessage("Copy failed. Your browser blocked clipboard access.");
-      setCopyMessage("");
-    }
-  }
-
-  async function downloadPreview() {
-    if (!previewRows.length) return;
-    const baseName =
-      activeProject?.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "billy-scraper";
-
-    try {
-      await exportPreviewSpreadsheet({
-        fileName: `${baseName}-billy-scraper-preview.xlsx`,
-        headers: previewHeaders,
-        rows: previewRows.map((row) => row.values),
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Excel export failed.");
-    }
-  }
-
-  function toggleRow(rowId: string) {
-    setSelectedRowIds((current) =>
-      current.includes(rowId) ? current.filter((id) => id !== rowId) : [...current, rowId],
-    );
-  }
-
-  function toggleAllPreviewRows() {
-    if (selectedPreviewRows.length === previewRows.length) {
-      setSelectedRowIds([]);
-      return;
-    }
-    setSelectedRowIds(previewRows.map((row) => row.id));
-  }
-
-  function toggleFilterSection(section: BillyFilterSectionKey) {
-    setOpenFilterSections((current) => ({ ...current, [section]: !current[section] }));
-  }
-
-  function togglePresetRange(range: { key: string }) {
-    setFilters((current) => {
-      const selected = current.followerRanges;
-      const next = selected.includes(range.key)
-        ? selected.filter((item) => item !== range.key)
-        : [...selected, range.key];
-      return { ...current, followerRanges: next };
-    });
-  }
-
-  function clearBillyFilterChip(chip: BillyFilterChip) {
-    setFilters((current) => {
-      const next: BillyFilterSettings = {
-        ...current,
-        followerRanges: [...current.followerRanges],
-      };
-
-      if (chip.action.type === "array") {
-        if (chip.action.field === "followerRanges") {
-          next.followerRanges = next.followerRanges.filter((item) => item !== chip.action.value);
-        }
-        return next;
-      }
-
-      chip.action.fields.forEach((field) => clearBillyFilterValue(next, field));
-      return next;
-    });
-  }
-
-  if (isLoadingTemplates) {
-    return (
-      <Panel title="Billy's Scraper System" icon={Hash}>
-        <div className="katlas-status-line">Loading campaigns and sourcing templates...</div>
-      </Panel>
-    );
-  }
-
-  return (
-    <>
-      {statusMessage || copyMessage || errorMessage ? (
-        <section className="space-y-2">
-          {statusMessage ? (
-            <div className="katlas-status-line flex items-center gap-2">
-              <Check className="size-4 text-emerald-400" />
-              {statusMessage}
-            </div>
-          ) : null}
-          {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
-          {errorMessage ? (
-            <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {errorMessage}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-        <aside className="flex min-w-0 flex-col gap-5">
-          <Panel title="Campaign" icon={ClipboardList}>
-            {projects.length > 0 ? (
-              <>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Campaign From Campaign Profiles
-                  </label>
-                  <select
-                    value={activeProject?.campaignId ?? ""}
-                    onChange={(event) => setSelectedCampaignId(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                  >
-                    {projects.map((project) => (
-                      <option key={project.campaignId} value={project.campaignId}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mt-3">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Saved Sourcing Template
-                  </label>
-                  <select
-                    value={activeTemplate?.id ?? ""}
-                    onChange={(event) => setSelectedTemplateId(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                  >
-                    {activeProject?.templates.map((templateItem) => (
-                      <option key={templateItem.id} value={templateItem.id}>
-                        {templateItem.templateName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            ) : (
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                Billy can scrape without a campaign. Create campaigns in Campaign Profiles before
-                preparing the final preview.
-              </p>
-            )}
-          </Panel>
-
-          <Panel title="Scrape Source" icon={Hash}>
-            <HashtagScraperForm
-              value={hashtagInput}
-              isScraping={isScraping}
-              canScrape
-              onChange={setHashtagInput}
-              onScrape={() => {
-                void scrapeHashtag();
-              }}
-            />
-            {scrapeReport ? <HashtagScrapeReportPanel report={scrapeReport} /> : null}
-          </Panel>
-
-          <Panel title="Billy Filters" icon={Filter}>
-            <BillyFilterControls
-              filters={filters}
-              openSections={openFilterSections}
-              followerRanges={followerRanges}
-              onToggleSection={toggleFilterSection}
-              onPresetRange={togglePresetRange}
-              onChange={setFilters}
-              onReset={() => setFilters(createBillyFilters())}
-            />
-          </Panel>
-        </aside>
-
-        <div className="flex min-w-0 flex-col gap-5">
-          <Panel title="Billy Preview" icon={Sparkles}>
-            {activeFilterChips.length > 0 ? (
-              <ActiveBillyFilterChips chips={activeFilterChips} onClear={clearBillyFilterChip} />
-            ) : null}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">
-                  {filteredCreators.length.toLocaleString()} of {creators.length.toLocaleString()}{" "}
-                  creators match Billy's filters
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Output uses the selected sourcing template, then appends Billy's full bio and
-                  source link columns.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={preparePreview}
-                  disabled={isProcessing || !activeProject || creators.length === 0}
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isProcessing ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-4" />
-                  )}
-                  Prepare Preview
-                </button>
-                <button
-                  onClick={() => setIsPreviewModalOpen(true)}
-                  disabled={!previewReady || previewRows.length === 0}
-                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <FileSpreadsheet className="size-4" />
-                  Open Preview
-                </button>
-                <button
-                  onClick={() => copyRows(previewRows, "Billy rows")}
-                  disabled={!previewReady || previewRows.length === 0}
-                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Copy className="size-4" />
-                  Copy All Rows
-                </button>
-                <button
-                  onClick={downloadPreview}
-                  disabled={!previewReady || previewRows.length === 0}
-                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download className="size-4" />
-                  Download Modified Sheet
-                </button>
-              </div>
-            </div>
-
-            <PreviewMetrics
-              imported={creators.length}
-              filtered={filteredCreators.length}
-              withContact={previewRows.filter((row) => hasContactInfo(row.contactInfo)).length}
-              withoutContact={previewRows.filter((row) => !hasContactInfo(row.contactInfo)).length}
-            />
-
-            {!previewReady ? (
-              <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                Scrape a hashtag or sound link, filter the creators, then prepare Billy's preview.
-              </div>
-            ) : null}
-          </Panel>
-        </div>
-      </section>
-
-      {isPreviewModalOpen ? (
-        <PreviewModal
-          headers={previewHeaders}
-          rows={previewRows}
-          selectedRowIds={selectedRowIds}
-          onToggleRow={toggleRow}
-          onToggleAll={toggleAllPreviewRows}
-          onCopyAll={() => copyRows(previewRows, "Billy rows")}
-          onCopySelected={() => copyRows(selectedPreviewRows, "Selected Billy rows")}
-          onDownload={downloadPreview}
-          onClose={() => setIsPreviewModalOpen(false)}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function BillyFilterControls({
-  filters,
-  openSections,
-  followerRanges,
-  onToggleSection,
-  onPresetRange,
-  onChange,
-  onReset,
-}: {
-  filters: BillyFilterSettings;
-  openSections: Record<BillyFilterSectionKey, boolean>;
-  followerRanges: RangeOption[];
-  onToggleSection: (section: BillyFilterSectionKey) => void;
-  onPresetRange: (range: { key: string }) => void;
-  onChange: (filters: BillyFilterSettings) => void;
-  onReset: () => void;
-}) {
-  const hasActiveFilters = hasBillyFilters(filters);
-
-  return (
-    <div className="space-y-3">
-      <FilterDropdown
-        title="Followers"
-        summary={getRangeSelectionSummary(
-          filters.followerRanges,
-          filters.followersMin,
-          filters.followersMax,
-          followersRangeOptions,
-          "Select Followers",
-          "followers",
-        )}
-        open={openSections.followers}
-        onToggle={() => onToggleSection("followers")}
-      >
-        <BillyRangeOptionList
-          selected={filters.followerRanges}
-          ranges={followerRanges}
-          onSelect={onPresetRange}
-        />
-        <BillyRangeControl
-          min={filters.followersMin}
-          max={filters.followersMax}
-          minPlaceholder="Min followers"
-          maxPlaceholder="Max followers"
-          onMin={(followersMin) => onChange({ ...filters, followersMin })}
-          onMax={(followersMax) => onChange({ ...filters, followersMax })}
-        />
-      </FilterDropdown>
-
-      <button
-        type="button"
-        onClick={onReset}
-        disabled={!hasActiveFilters}
-        className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Reset Billy Filters
-      </button>
-    </div>
-  );
-}
-
-function BillyRangeControl({
-  min,
-  max,
-  minPlaceholder,
-  maxPlaceholder,
-  onMin,
-  onMax,
-}: {
-  min: string;
-  max: string;
-  minPlaceholder: string;
-  maxPlaceholder: string;
-  onMin: (value: string) => void;
-  onMax: (value: string) => void;
-}) {
-  return (
-    <div className="mt-3 rounded-md border border-border bg-card p-2">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">Custom Range</p>
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          value={min}
-          onChange={(event) => onMin(event.target.value)}
-          placeholder={minPlaceholder}
-          className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
-        />
-        <input
-          value={max}
-          onChange={(event) => onMax(event.target.value)}
-          placeholder={maxPlaceholder}
-          className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
-        />
-      </div>
-    </div>
-  );
-}
-
-function BillyRangeOptionList({
-  selected,
-  ranges,
-  onSelect,
-}: {
-  selected: string[];
-  ranges: RangeOption[];
-  onSelect: (range: RangeOption) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      {ranges.map((range) => (
-        <FilterOptionButton
-          key={range.key}
-          label={range.label}
-          count={range.count}
-          selected={selected.includes(range.key)}
-          onClick={() => onSelect(range)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ActiveBillyFilterChips({
-  chips,
-  onClear,
-}: {
-  chips: BillyFilterChip[];
-  onClear: (chip: BillyFilterChip) => void;
-}) {
-  return (
-    <div className="mb-4 flex flex-wrap gap-2">
-      {chips.map((chip) => (
-        <button
-          key={chip.key}
-          type="button"
-          onClick={() => onClear(chip)}
-          className="inline-flex h-8 items-center gap-1 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition hover:text-foreground"
-        >
-          {chip.label}
-          <X className="size-3" />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function HashtagScraperForm({
-  value,
-  isScraping,
-  canScrape,
-  onChange,
-  onScrape,
-}: {
-  value: string;
-  isScraping: boolean;
-  canScrape: boolean;
-  onChange: (value: string) => void;
-  onScrape: () => void;
-}) {
-  return (
-    <form
-      className="space-y-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onScrape();
-      }}
-    >
-      <label className="block">
-        <span className="text-xs font-medium text-muted-foreground">
-          TikTok Hashtag Or Sound Link
-        </span>
-        <div className="mt-1 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-          <input
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="#skincare or https://www.tiktok.com/music/..."
-            className="h-10 w-full min-w-0 bg-transparent px-3 text-sm outline-none"
-          />
-        </div>
-      </label>
-      <button
-        type="submit"
-        disabled={!canScrape || isScraping || !normalizeBillySourceInput(value)}
-        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isScraping ? <Loader2 className="size-4 animate-spin" /> : <Hash className="size-4" />}
-        {isScraping ? "Scraping..." : "Scrape Source"}
-      </button>
-    </form>
-  );
-}
-
-function HashtagScrapeReportPanel({ report }: { report: HashtagScrapeReport }) {
-  return (
-    <div className="mt-3 space-y-3 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
-      <div>
-        <p className="font-medium uppercase text-muted-foreground">Current Source</p>
-        <a
-          href={report.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 block truncate font-medium text-primary underline-offset-2 hover:underline"
-        >
-          {report.sourceLabel}
-        </a>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-        <div>
-          <p className="font-medium uppercase text-muted-foreground">Creators</p>
-          <p className="mt-1 font-medium text-foreground">
-            {report.creatorsFound.toLocaleString()}
-          </p>
-        </div>
-        <div>
-          <p className="font-medium uppercase text-muted-foreground">Videos Read</p>
-          <p className="mt-1 font-medium text-foreground">{report.videosFound.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="font-medium uppercase text-muted-foreground">Duplicates Removed</p>
-          <p className="mt-1 font-medium text-foreground">
-            {report.duplicatesRemoved.toLocaleString()}
-          </p>
-        </div>
-      </div>
-      {report.warnings.length ? (
-        <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-amber-100">
-          {report.warnings[0]}
-        </div>
       ) : null}
     </div>
   );
@@ -3022,24 +1925,18 @@ function PreviewModal({
 
 function LeaveProjectModal({
   hasUnsavedTemplateChanges,
-  workingDataKind,
   actionLabel,
   onStay,
   onLeave,
 }: {
   hasUnsavedTemplateChanges: boolean;
-  workingDataKind: "easykol" | "billy";
   actionLabel: string;
   onStay: () => void;
   onLeave: () => void;
 }) {
-  const workingDataLabel =
-    workingDataKind === "billy"
-      ? "Billy scrape rows, filters, and preview data"
-      : "The uploaded EasyKOL file and preview data";
-  const eyebrowLabel =
-    workingDataKind === "billy" ? "Before leaving Billy:" : "Before leaving this campaign:";
-  const leaveButtonLabel = workingDataKind === "billy" ? actionLabel : "Leave Campaign";
+  const workingDataLabel = "The uploaded EasyKOL file and preview data";
+  const eyebrowLabel = "Before leaving this workspace:";
+  const leaveButtonLabel = actionLabel === "Leave Page" ? "Leave Page" : actionLabel;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
@@ -3310,7 +2207,7 @@ function TemplateStatus({
       ? `Saved template: ${templateName || "Untitled Template"} (${columnCount} column${
           columnCount === 1 ? "" : "s"
         })`
-      : "Currently no saved template for this campaign";
+      : "Currently no saved template for this workspace";
 
   return (
     <div className="mt-3 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
@@ -3818,222 +2715,6 @@ function valueInRange(value: unknown, range: { min: string; max: string }): bool
   return true;
 }
 
-function createBillyFilters(): BillyFilterSettings {
-  return {
-    ...emptyBillyFilters,
-    followerRanges: [],
-  };
-}
-
-function filterBillyCreators(
-  creators: UploadedCreator[],
-  filters: BillyFilterSettings,
-): UploadedCreator[] {
-  return creators.filter(({ data }) => {
-    if (
-      !matchesBillyRangeGroup(
-        data.Followers,
-        filters.followerRanges,
-        filters.followersMin,
-        filters.followersMax,
-        followersRangeOptions,
-      )
-    ) {
-      return false;
-    }
-    return true;
-  });
-}
-
-function getBillyMetricRangeCounts(
-  creators: UploadedCreator[],
-  field: string,
-  ranges: ReadonlyArray<{ key: string; label: string; min: string; max: string }>,
-): RangeOption[] {
-  return ranges.map((range) => ({
-    ...range,
-    count: creators.filter(({ data }) => valueInRange(data[field], range)).length,
-  }));
-}
-
-function matchesBillyRangeGroup(
-  value: unknown,
-  selectedRangeKeys: string[],
-  customMin: string,
-  customMax: string,
-  ranges: ReadonlyArray<{ key: string; min: string; max: string }>,
-): boolean {
-  const hasCustomRange = Boolean(customMin || customMax);
-  if (selectedRangeKeys.length === 0 && !hasCustomRange) return true;
-
-  const matchesPreset = selectedRangeKeys.some((key) => {
-    const range = ranges.find((option) => option.key === key);
-    return range ? matchesBillyRange(value, range.min, range.max) : false;
-  });
-  const matchesCustom = hasCustomRange && matchesBillyRange(value, customMin, customMax);
-  return matchesPreset || matchesCustom;
-}
-
-function matchesBillyRange(value: unknown, min: string, max: string): boolean {
-  const minValue = parseMetric(min);
-  const maxValue = parseMetric(max);
-  if (minValue == null && maxValue == null) return true;
-  const metric = parseMetric(value);
-  if (metric == null) return false;
-  if (minValue != null && metric < minValue) return false;
-  if (maxValue != null && metric > maxValue) return false;
-  return true;
-}
-
-function hasBillyFilters(filters: BillyFilterSettings): boolean {
-  return filters.followerRanges.length > 0 || Boolean(filters.followersMin || filters.followersMax);
-}
-
-function clearBillyFilterValue(filters: BillyFilterSettings, key: keyof BillyFilterSettings) {
-  if (key === "followersMin") filters.followersMin = "";
-  if (key === "followersMax") filters.followersMax = "";
-  if (key === "followerRanges") filters.followerRanges = [];
-}
-
-function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChip[] {
-  const chips: BillyFilterChip[] = [];
-
-  filters.followerRanges.forEach((rangeKey) => {
-    const range = followersRangeOptions.find((option) => option.key === rangeKey);
-    if (!range) return;
-    chips.push({
-      key: range.key,
-      label: `${range.label} Followers`,
-      action: { type: "array", field: "followerRanges", value: range.key },
-    });
-  });
-  if (filters.followersMin || filters.followersMax) {
-    chips.push({
-      key: "billy-followers-custom",
-      label: getRangeChipLabel(
-        filters.followersMin,
-        filters.followersMax,
-        "Followers",
-        followersRangeOptions,
-      ),
-      action: { type: "fields", fields: ["followersMin", "followersMax"] },
-    });
-  }
-  return chips;
-}
-
-function parseBillyExtensionPayload(value: unknown): BillyExtensionPayload | undefined {
-  if (!isRecord(value)) return undefined;
-  const rawCreators = Array.isArray(value.creators) ? value.creators : [];
-  const creators = rawCreators
-    .map(parseBillyExtensionCreator)
-    .filter((creator): creator is BillyExtensionCreator => Boolean(creator));
-  const sourceUrl = typeof value.sourceUrl === "string" ? value.sourceUrl : "";
-  const sourceLabel =
-    typeof value.sourceLabel === "string" && value.sourceLabel.trim()
-      ? value.sourceLabel.trim()
-      : "TikTok extension import";
-  const videosFound =
-    typeof value.videosFound === "number" && Number.isFinite(value.videosFound)
-      ? value.videosFound
-      : creators.reduce((count, creator) => count + (creator.videos?.length || 1), 0);
-
-  return {
-    collectedAt: typeof value.collectedAt === "string" ? value.collectedAt : undefined,
-    sourceLabel,
-    sourceUrl,
-    videosFound,
-    creators: dedupeBillyExtensionCreators(creators),
-  };
-}
-
-function parseBillyExtensionCreator(value: unknown): BillyExtensionCreator | undefined {
-  if (!isRecord(value)) return undefined;
-  const username = cleanBillyUsername(stringValue(value.username));
-  if (!username) return undefined;
-  const videos = Array.isArray(value.videos)
-    ? value.videos.filter((item): item is string => typeof item === "string" && item.trim())
-    : undefined;
-  return {
-    username,
-    profileUrl:
-      typeof value.profileUrl === "string" && value.profileUrl.trim()
-        ? value.profileUrl.trim()
-        : `https://www.tiktok.com/@${username}`,
-    sampleVideoUrl:
-      typeof value.sampleVideoUrl === "string" && value.sampleVideoUrl.trim()
-        ? value.sampleVideoUrl.trim()
-        : videos?.[0],
-    videoDescription:
-      typeof value.videoDescription === "string" ? value.videoDescription.trim() : undefined,
-    sourceLink: typeof value.sourceLink === "string" ? value.sourceLink.trim() : undefined,
-    videos,
-  };
-}
-
-function dedupeBillyExtensionCreators(creators: BillyExtensionCreator[]): BillyExtensionCreator[] {
-  const creatorsByUsername = new Map<string, BillyExtensionCreator>();
-
-  creators.forEach((creator) => {
-    const key = cleanBillyUsername(creator.username).toLowerCase();
-    if (!key) return;
-    const existing = creatorsByUsername.get(key);
-    if (!existing) {
-      creatorsByUsername.set(key, {
-        ...creator,
-        username: cleanBillyUsername(creator.username),
-        videos: [...(creator.videos ?? [])],
-      });
-      return;
-    }
-
-    creatorsByUsername.set(key, {
-      ...existing,
-      profileUrl: existing.profileUrl || creator.profileUrl,
-      sampleVideoUrl: existing.sampleVideoUrl || creator.sampleVideoUrl,
-      videoDescription: existing.videoDescription || creator.videoDescription,
-      sourceLink: existing.sourceLink || creator.sourceLink,
-      videos: Array.from(new Set([...(existing.videos ?? []), ...(creator.videos ?? [])])),
-    });
-  });
-
-  return Array.from(creatorsByUsername.values());
-}
-
-function createBillyRowsFromExtensionPayload(
-  payload: BillyExtensionPayload,
-): Array<Record<string, string | number | boolean | null | undefined>> {
-  return payload.creators.map((creator) => {
-    const username = cleanBillyUsername(creator.username);
-    const description = creator.videoDescription ?? "";
-    return {
-      Nickname: username,
-      "@Username": `@${username}`,
-      Description: description,
-      Platform: "TikTok",
-      Followers: "",
-      "Avg. Views": "",
-      "Avg. Likes": "",
-      Email: extractEmailFromText(description),
-      "Last Post": "",
-      URL: creator.profileUrl || `https://www.tiktok.com/@${username}`,
-      "Sample Video URL": creator.sampleVideoUrl || creator.videos?.[0] || "",
-      "Source Link": creator.sourceLink || payload.sourceUrl,
-    };
-  });
-}
-
-function cleanBillyUsername(value: string): string {
-  return value
-    .trim()
-    .replace(/^@+/, "")
-    .replace(/[/?#].*$/, "");
-}
-
-function extractEmailFromText(value: string): string {
-  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
-}
-
 function getSelectionSummary(
   values: string[],
   emptyLabel: string,
@@ -4245,42 +2926,49 @@ function clearFilterValue(filters: FilterSettings, key: keyof FilterSettings) {
 function loadProjects(database: {
   worksheets: {
     AppSettings: AppSettingRecord[];
-    CampaignProfiles: CampaignProfileRecord[];
     SourcingTemplates: SourcingTemplateRecord[];
   };
 }): SourcingProject[] {
   if (typeof window === "undefined") return [];
-  const campaigns = database.worksheets.CampaignProfiles;
   const settings = new Map(
     database.worksheets.AppSettings.map((setting) => [setting.settingKey, setting.settingValue]),
   );
-  const templatesByCampaign = groupSourcingTemplates(database.worksheets.SourcingTemplates);
+  const templateGroups = groupSourcingTemplates(database.worksheets.SourcingTemplates);
 
-  return campaigns.map((campaign) =>
-    createProjectFromCampaign(
-      campaign,
-      templatesByCampaign.get(campaign.campaignId) ?? [],
-      settings,
-    ),
-  );
+  if (templateGroups.length === 0) {
+    return [
+      createProjectFromTemplateGroup(
+        {
+          campaignId: defaultTemplateWorkspaceId,
+          campaignName: defaultTemplateWorkspaceName,
+          templates: [],
+          createdAt: new Date().toISOString(),
+        },
+        settings,
+      ),
+    ];
+  }
+
+  return templateGroups.map((group) => createProjectFromTemplateGroup(group, settings));
 }
 
-function createProjectFromCampaign(
-  campaign: CampaignProfileRecord,
-  templates: SourcingTemplate[],
+function createProjectFromTemplateGroup(
+  group: SourcingTemplateGroup,
   settings: Map<string, string>,
 ): SourcingProject {
   const ensuredTemplates =
-    templates.length > 0 ? templates : [createDefaultSourcingTemplate(campaign.campaignId)];
+    group.templates.length > 0
+      ? group.templates
+      : [createDefaultSourcingTemplate(group.campaignId)];
   const activeTemplateId =
-    settings.get(`sourcing.activeTemplate.${campaign.campaignId}`) || ensuredTemplates[0]?.id || "";
+    settings.get(`sourcing.activeTemplate.${group.campaignId}`) || ensuredTemplates[0]?.id || "";
 
   return activateProjectTemplate(
     {
-      id: campaign.campaignId,
-      campaignId: campaign.campaignId,
-      name: campaign.campaignName,
-      createdAt: campaign.createdAt,
+      id: group.campaignId,
+      campaignId: group.campaignId,
+      name: group.campaignName,
+      createdAt: group.createdAt,
       filters: { ...emptyFilters },
       templates: ensuredTemplates,
       activeTemplateId,
@@ -4292,29 +2980,40 @@ function createProjectFromCampaign(
   );
 }
 
-function groupSourcingTemplates(records: SourcingTemplateRecord[]) {
-  const grouped = new Map<string, SourcingTemplate[]>();
+function groupSourcingTemplates(records: SourcingTemplateRecord[]): SourcingTemplateGroup[] {
+  const grouped = new Map<string, SourcingTemplateGroup>();
   const cleanup = cleanupSourcingTemplateRecords(records);
   if (cleanup.removedCount > 0) {
     console.info("[SourcingTemplatesCleanup]", "load-templates", cleanup);
   }
   cleanup.records.filter(isActiveSourcingTemplateRecord).forEach((record) => {
     const template = normalizeSourcingTemplateRecord(record);
-    const templates = grouped.get(template.campaignId) ?? [];
-    templates.push(template);
-    grouped.set(template.campaignId, templates);
+    const group = grouped.get(template.campaignId) ?? {
+      campaignId: template.campaignId,
+      campaignName: record.campaignName || defaultTemplateWorkspaceName,
+      templates: [],
+      createdAt: template.createdAt,
+    };
+    group.templates.push(template);
+    if (!group.campaignName && record.campaignName) group.campaignName = record.campaignName;
+    if (template.createdAt < group.createdAt) group.createdAt = template.createdAt;
+    grouped.set(template.campaignId, group);
   });
 
-  grouped.forEach((templates) =>
-    templates.sort((first, second) => first.createdAt.localeCompare(second.createdAt)),
-  );
-  return grouped;
+  return Array.from(grouped.values())
+    .map((group) => ({
+      ...group,
+      templates: group.templates.sort((first, second) =>
+        first.createdAt.localeCompare(second.createdAt),
+      ),
+    }))
+    .sort((first, second) => first.campaignName.localeCompare(second.campaignName));
 }
 
 function normalizeSourcingTemplateRecord(record: SourcingTemplateRecord): SourcingTemplate {
   return {
     id: record.id || createId("sourcing-template"),
-    campaignId: record.campaignId,
+    campaignId: record.campaignId || defaultTemplateWorkspaceId,
     templateName: record.templateName || "Default Template",
     columns: normalizeTemplate(parseJsonSetting(record.columnsJson)),
     createdAt: record.createdAt || new Date().toISOString(),
@@ -4536,124 +3235,6 @@ function normalizeEmailAvailabilityArray(
   return Array.from(new Set([legacyValue, ...values].filter(Boolean))) as EmailAvailability[];
 }
 
-type AIContactEnrichmentResponse =
-  | {
-      ok: true;
-      results: AIContactEnrichmentResult[];
-      processed: number;
-      skipped: number;
-      maxCreators: number;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
-
-type AIContactEnrichmentResult = {
-  creatorId: string;
-  contactsText: string;
-  contacts: Partial<Record<ContactField, string>>;
-  confidence: "high" | "medium" | "low";
-  source: string;
-  reasoning: string;
-  sourcesChecked: string[];
-  warnings: string[];
-  modelUsed: string;
-};
-
-async function enrichContactsWithAI(
-  creators: UploadedCreator[],
-): Promise<Extract<AIContactEnrichmentResponse, { ok: true }>> {
-  const response = await fetch("/api/ai/enrich-contacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      creators: creators.map((creator) => ({
-        creatorId: creator.id,
-        data: creator.data,
-      })),
-      maxCreators: 10,
-    }),
-  });
-  const payload = (await response.json().catch(() => ({
-    ok: false,
-    error: "AI enrichment API returned an invalid response.",
-  }))) as AIContactEnrichmentResponse;
-
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.ok ? "AI enrichment failed." : payload.error);
-  }
-
-  return payload;
-}
-
-function mergeAIEnrichmentResults(
-  localResults: CreatorEnrichmentResult[],
-  aiResults: AIContactEnrichmentResult[],
-): CreatorEnrichmentResult[] {
-  const aiByCreatorId = new Map(aiResults.map((result) => [result.creatorId, result]));
-
-  return localResults.map((result) => {
-    const aiResult = aiByCreatorId.get(result.creatorId);
-    if (!aiResult) return result;
-
-    return {
-      creatorId: result.creatorId,
-      contactInfo: mergeContactInfoWithAI(result.contactInfo, aiResult),
-    };
-  });
-}
-
-function mergeContactInfoWithAI(
-  localContactInfo: ContactInfo,
-  aiResult: AIContactEnrichmentResult,
-): ContactInfo {
-  const aiConfidence = getAIConfidenceScore(aiResult.confidence);
-  const aiDiscoveries = (
-    Object.entries(aiResult.contacts) as Array<[ContactField, string | undefined]>
-  )
-    .filter(([, value]) => Boolean(value?.trim()))
-    .map(([field, value]) => ({
-      field,
-      value: value?.trim() ?? "",
-      source: "External Discovery" as const,
-      discoveryMethod: "AI Extraction" as const,
-      provider: aiResult.modelUsed ? `OpenRouter ${aiResult.modelUsed}` : "OpenRouter",
-      confidence: aiConfidence,
-      sourceUrl: aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
-    }));
-
-  return {
-    ...localContactInfo,
-    email: localContactInfo.email || aiResult.contacts.email,
-    line: localContactInfo.line || aiResult.contacts.line,
-    whatsapp: localContactInfo.whatsapp || aiResult.contacts.whatsapp,
-    phone: localContactInfo.phone || aiResult.contacts.phone,
-    instagram: localContactInfo.instagram || aiResult.contacts.instagram,
-    tiktok: localContactInfo.tiktok || aiResult.contacts.tiktok,
-    youtube: localContactInfo.youtube || aiResult.contacts.youtube,
-    website: localContactInfo.website || aiResult.contacts.website,
-    other: localContactInfo.other || aiResult.contacts.other,
-    sourceUrl:
-      localContactInfo.sourceUrl ||
-      aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
-    confidence: Math.max(localContactInfo.confidence, aiConfidence),
-    discoveryMethod: aiDiscoveries.length
-      ? `OpenRouter: ${aiResult.source || "available sources"}`
-      : localContactInfo.discoveryMethod,
-    discoveries: [...localContactInfo.discoveries, ...aiDiscoveries],
-    externalDiscoveryStatus: aiDiscoveries.length
-      ? `AI enrichment complete: ${aiResult.reasoning || "contacts extracted"}`
-      : `AI enrichment complete: ${aiResult.reasoning || "no extra contacts found"}`,
-  };
-}
-
-function getAIConfidenceScore(confidence: AIContactEnrichmentResult["confidence"]): number {
-  if (confidence === "high") return 90;
-  if (confidence === "medium") return 70;
-  return 45;
-}
-
 function cloneTemplate(template: TemplateColumn[]): TemplateColumn[] {
   return template.map((column) => ({ ...column }));
 }
@@ -4679,33 +3260,6 @@ function formatSavedAt(value?: string): string {
 function stringValue(value: unknown): string {
   if (value == null) return "";
   return String(value);
-}
-
-function normalizeBillySourceInput(value: string): string {
-  return value.trim();
-}
-
-function getInitialSourcingAssistantPage(): SourcingAssistantPage {
-  return getSourcingAssistantPageFromHash() ?? "easykol";
-}
-
-function getSourcingAssistantPageFromHash(): SourcingAssistantPage | undefined {
-  if (typeof window === "undefined") return undefined;
-  const hash = window.location.hash.toLowerCase();
-  if (hash.includes("billy")) return "billy";
-  if (hash.includes("easykol")) return "easykol";
-  return undefined;
-}
-
-function updateSourcingAssistantHash(page: SourcingAssistantPage) {
-  if (typeof window === "undefined") return;
-  const nextHash = page === "billy" ? "#billy" : "#easykol";
-  if (window.location.hash === nextHash) return;
-  window.history.replaceState(
-    null,
-    "",
-    `${window.location.pathname}${window.location.search}${nextHash}`,
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
