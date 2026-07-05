@@ -40,47 +40,45 @@
 
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.145 0.007 250);
-  --foreground: oklch(0.96 0.003 250);
-  --card: oklch(0.185 0.008 250);
-  --card-foreground: oklch(0.96 0.003 250);
-  --popover: oklch(0.19 0.008 250);
-  --popover-foreground: oklch(0.96 0.003 250);
-  --primary: oklch(0.96 0.003 250);
-  --primary-foreground: oklch(0.16 0.005 250);
-  --secondary: oklch(0.225 0.008 250);
-  --secondary-foreground: oklch(0.96 0.003 250);
-  --muted: oklch(0.215 0.008 250);
-  --muted-foreground: oklch(0.68 0.014 250);
-  --accent: oklch(0.27 0.032 165);
-  --accent-foreground: oklch(0.96 0.003 250);
-  --destructive: oklch(0.6 0.2 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.3 0.01 250 / 0.72);
-  --input: oklch(0.32 0.012 250 / 0.86);
-  --ring: oklch(0.67 0.15 165);
+  --background: oklch(0.965 0.018 118);
+  --foreground: oklch(0.16 0.018 235);
+  --card: oklch(0.995 0.006 105);
+  --card-foreground: oklch(0.17 0.012 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.012 250);
+  --primary: oklch(0.18 0.012 250);
+  --primary-foreground: oklch(0.99 0.003 100);
+  --secondary: oklch(0.955 0.009 100);
+  --secondary-foreground: oklch(0.19 0.012 250);
+  --muted: oklch(0.93 0.022 122);
+  --muted-foreground: oklch(0.42 0.022 235);
+  --accent: oklch(0.89 0.13 139);
+  --accent-foreground: oklch(0.19 0.05 145);
+  --destructive: oklch(0.56 0.19 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.83 0.028 118 / 0.9);
+  --input: oklch(0.79 0.024 118 / 0.95);
+  --ring: oklch(0.62 0.18 138);
 
-  --sidebar: oklch(0.145 0.005 250);
-  --sidebar-foreground: oklch(0.85 0.005 250);
-  --sidebar-border: oklch(0.22 0.006 250 / 0.6);
-  --sidebar-accent: oklch(0.22 0.008 250);
-  --sidebar-accent-foreground: oklch(0.98 0.003 250);
+  --sidebar: oklch(0.985 0.006 100);
+  --sidebar-foreground: oklch(0.22 0.012 250);
+  --sidebar-border: oklch(0.88 0.012 100 / 0.92);
+  --sidebar-accent: oklch(0.93 0.035 155);
+  --sidebar-accent-foreground: oklch(0.22 0.012 250);
 
-  --glow: oklch(0.62 0.16 165);
+  --glow: oklch(0.72 0.2 138);
 
   --gradient-hero:
-    radial-gradient(
-      58% 68% at 50% -6%,
-      color-mix(in oklab, var(--glow) 20%, transparent) 0%,
-      transparent 65%
-    ),
-    radial-gradient(36% 40% at 10% 8%, oklch(0.45 0.07 205 / 0.14) 0%, transparent 70%);
+    radial-gradient(44rem 28rem at 18% 4%, oklch(0.76 0.16 147 / 0.38), transparent 72%),
+    radial-gradient(42rem 30rem at 92% 14%, oklch(0.86 0.13 92 / 0.3), transparent 68%),
+    radial-gradient(36rem 28rem at 72% 82%, oklch(0.72 0.1 266 / 0.26), transparent 72%),
+    linear-gradient(135deg, oklch(0.95 0.022 146), oklch(0.88 0.028 232) 48%, oklch(0.92 0.03 106));
   --gradient-orb: radial-gradient(
     circle at 35% 30%,
-    oklch(0.85 0.18 180) 0%,
-    oklch(0.55 0.22 220) 35%,
-    oklch(0.25 0.15 250) 70%,
-    oklch(0.15 0.08 260) 100%
+    oklch(0.88 0.14 155) 0%,
+    oklch(0.76 0.11 170) 38%,
+    oklch(0.93 0.03 95) 74%,
+    oklch(1 0 0) 100%
   );
 }
 
@@ -96,14 +94,26 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
-    color-scheme: dark;
+    color-scheme: light;
     text-rendering: optimizeLegibility;
   }
 
   body {
     background-image:
-      radial-gradient(circle at 50% -20%, oklch(0.5 0.12 165 / 0.12), transparent 36rem),
-      linear-gradient(180deg, oklch(0.17 0.008 250), var(--color-background) 22rem);
+      radial-gradient(54rem 30rem at 12% -8%, oklch(0.76 0.17 146 / 0.32), transparent 74%),
+      radial-gradient(44rem 32rem at 88% -6%, oklch(0.92 0.17 96 / 0.24), transparent 70%),
+      linear-gradient(180deg, oklch(0.965 0.018 118), var(--color-background) 34rem);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(28rem 28rem at 100% 48%, oklch(0.68 0.17 143 / 0.22), transparent 72%),
+      radial-gradient(22rem 22rem at 0% 78%, oklch(0.65 0.12 255 / 0.14), transparent 72%);
+    opacity: 0.9;
   }
 
   ::selection {
@@ -129,37 +139,88 @@
   }
 
   select {
-    color-scheme: dark;
+    color-scheme: light;
   }
 }
 
 @layer components {
   .katlas-page {
-    @apply relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-5 py-6;
+    @apply relative mx-auto flex w-full max-w-[1480px] flex-col gap-7 px-4 py-6 sm:px-5 lg:py-8;
   }
 
   .katlas-hero-panel {
-    @apply rounded-2xl border border-border/80 bg-card/70 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:p-7;
+    @apply relative isolate min-h-[410px] rounded-[2rem] border border-white/45 bg-card/70 p-6 shadow-[0_32px_90px_rgba(38,72,58,0.14)] backdrop-blur-xl md:p-10;
+    background-image: var(--gradient-hero);
+  }
+
+  .katlas-hero-panel::before {
+    content: "";
+    position: absolute;
+    right: -8rem;
+    bottom: -12rem;
+    width: min(42vw, 34rem);
+    min-width: 18rem;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 30% 25%, oklch(0.78 0.19 140 / 0.8), transparent 42%),
+      radial-gradient(circle at 72% 76%, oklch(0.68 0.14 270 / 0.5), transparent 56%),
+      oklch(0.84 0.08 178 / 0.7);
+    opacity: 0.88;
+    z-index: -1;
+  }
+
+  .katlas-hero-panel::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(22vw, 11rem);
+    height: min(22vw, 11rem);
+    clip-path: polygon(100% 0, 100% 100%, 0 0);
+    background: linear-gradient(135deg, oklch(0.93 0.18 100), oklch(0.82 0.11 90 / 0.45));
+    opacity: 0.86;
+    z-index: -1;
   }
 
   .katlas-panel {
-    @apply rounded-xl border border-border/80 bg-card/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-sm;
+    @apply rounded-[1.45rem] border border-white/70 bg-card/82 p-5 shadow-[0_22px_60px_rgba(38,72,58,0.1)] backdrop-blur-xl transition-colors duration-200;
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.86), rgb(255 255 255 / 0.48)),
+      radial-gradient(20rem 14rem at 100% 0%, color-mix(in oklab, var(--glow) 13%, transparent), transparent 68%);
+  }
+
+  .katlas-panel:hover {
+    border-color: color-mix(in oklab, var(--ring) 28%, white 72%);
   }
 
   .katlas-panel-icon {
-    @apply grid size-8 place-items-center rounded-lg border border-border/80 bg-accent/70 text-accent-foreground shadow-[0_0_24px_rgba(34,197,94,0.08)];
+    @apply grid size-8 place-items-center rounded-lg border border-border/80 bg-accent text-accent-foreground shadow-[0_10px_24px_rgba(22,163,74,0.12)];
   }
 
   .katlas-muted-box {
-    @apply rounded-lg border border-border/75 bg-background/65;
+    @apply rounded-2xl border border-white/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)];
   }
 
   .katlas-table-shell {
-    @apply overflow-x-auto rounded-xl border border-border/80 bg-background/35 shadow-inner;
+    @apply overflow-x-auto rounded-2xl border border-white/70 bg-card/90 shadow-[0_18px_42px_rgba(38,72,58,0.08)];
   }
 
   .katlas-status-line {
-    @apply rounded-lg border border-border/75 bg-card/80 px-3 py-2 text-sm text-muted-foreground shadow-[0_12px_32px_rgba(0,0,0,0.14)];
+    @apply rounded-lg border border-border/75 bg-card/95 px-3 py-2 text-sm text-muted-foreground shadow-[0_12px_28px_rgba(15,23,42,0.06)];
+  }
+
+  .easykol-action-button {
+    @apply inline-flex h-10 items-center gap-2 rounded-full border border-white/75 bg-white/72 px-4 text-sm font-medium shadow-[0_12px_28px_rgba(38,72,58,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:border-ring/35 hover:bg-accent/80 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50;
+  }
+
+  .easykol-primary-button {
+    @apply inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-extrabold text-slate-950 shadow-[0_18px_34px_rgba(106,170,52,0.24)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50;
+    background-image: linear-gradient(90deg, oklch(0.92 0.18 96), oklch(0.83 0.22 132));
+  }
+
+  .easykol-primary-button:hover {
+    background-image: linear-gradient(90deg, oklch(0.95 0.18 98), oklch(0.78 0.22 136));
   }
 }
 

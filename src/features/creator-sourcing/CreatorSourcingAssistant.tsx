@@ -1018,25 +1018,43 @@ export function CreatorSourcingAssistant() {
     setSelectedRowIds(previewRows.map((row) => row.id));
   }
 
+  const isConfigurationWarning = errorMessage.includes("Google Sheets pending configuration");
+  const currentRunStatus = previewReady ? "Preview ready" : sourceFileName ? "File loaded" : "Waiting";
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
       <main className="katlas-page">
-        <section className="katlas-hero-panel">
-          <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
+        <section className="katlas-hero-panel overflow-hidden">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
                 EasyKOL Processor
               </p>
-              <h1 className="mt-3 max-w-3xl text-3xl font-medium leading-tight tracking-tight md:text-4xl">
+              <h1 className="mt-4 max-w-4xl text-[clamp(3rem,7vw,6.2rem)] font-black leading-[0.92] text-slate-950">
                 EasyKOL Scraping Processor
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              <p className="mt-6 max-w-2xl text-base leading-7 text-slate-700">
                 Upload the EasyKOL export, filter the creators, extract contacts, then preview the
                 exact columns you want to paste into a sourcing sheet.
               </p>
+            </div>
+
+            <div className="rounded-[1.35rem] border border-white/70 bg-white/54 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_22px_52px_rgba(38,72,58,0.12)] backdrop-blur-xl">
+              <div className="flex items-center justify-between gap-3 border-b border-border/65 pb-3">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Current Run</p>
+                <span className="rounded-full border border-border/80 bg-background/85 px-2.5 py-1 text-xs font-medium text-foreground">
+                  {currentRunStatus}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <HeroRunCard label="Template" value={activeProject?.templateName || "Default Template"} />
+                <HeroRunCard label="File" value={sourceFileName || "No file loaded"} />
+                <HeroRunCard label="Imported" value={creators.length.toLocaleString()} />
+                <HeroRunCard label="Filtered" value={filteredCreators.length.toLocaleString()} />
+              </div>
             </div>
           </div>
         </section>
@@ -1046,48 +1064,56 @@ export function CreatorSourcingAssistant() {
             <section className="space-y-2">
               {statusMessage ? (
                 <div className="katlas-status-line flex items-center gap-2">
-                  <Check className="size-4 text-emerald-400" />
+                  <Check className="size-4 text-emerald-600" />
                   {statusMessage}
                 </div>
               ) : null}
               {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
               {errorMessage ? (
-                <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div
+                  className={
+                    isConfigurationWarning
+                      ? "rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                      : "rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  }
+                >
                   {errorMessage}
                 </div>
               ) : null}
             </section>
           ) : null}
 
-          <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-            <aside className="flex min-w-0 flex-col gap-5">
+          <section className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <aside className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-24 xl:self-start">
               <Panel title="Templates" icon={ClipboardList}>
                 {projects.length > 0 ? (
                   <>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Template Group
-                      </label>
-                      <select
-                        value={activeProjectId}
-                        onChange={(event) => requestProjectChange(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                      >
-                        {projects.map((project) => (
-                          <option key={project.campaignId} value={project.campaignId}>
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="mt-3">
+                    {projects.length > 1 ? (
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Template Set
+                        </label>
+                        <select
+                          value={activeProjectId}
+                          onChange={(event) => requestProjectChange(event.target.value)}
+                          className="mt-1 h-10 w-full rounded-full border border-input bg-white/70 px-3 text-sm outline-none ring-ring transition focus:ring-2"
+                        >
+                          {projects.map((project) => (
+                            <option key={project.campaignId} value={project.campaignId}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    <div className={projects.length > 1 ? "mt-3" : ""}>
                       <label className="text-xs font-medium text-muted-foreground">
                         Saved Sourcing Template
                       </label>
                       <select
                         value={activeProject?.activeTemplateId ?? ""}
                         onChange={(event) => requestTemplateChange(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                        className="mt-1 h-10 w-full rounded-full border border-input bg-white/70 px-3 text-sm outline-none ring-ring focus:ring-2"
                       >
                         {activeProject?.templates.map((templateItem) => (
                           <option key={templateItem.id} value={templateItem.id}>
@@ -1100,7 +1126,7 @@ export function CreatorSourcingAssistant() {
                       <button
                         onClick={createNewTemplate}
                         disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        className="easykol-action-button justify-center"
                       >
                         <Plus className="size-4" />
                         New
@@ -1108,7 +1134,7 @@ export function CreatorSourcingAssistant() {
                       <button
                         onClick={() => setIsTemplateModalOpen(true)}
                         disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="easykol-primary-button justify-center"
                       >
                         <Columns3 className="size-4" />
                         Edit
@@ -1116,7 +1142,7 @@ export function CreatorSourcingAssistant() {
                       <button
                         onClick={() => setIsTemplateManagerOpen(true)}
                         disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        className="easykol-action-button justify-center"
                       >
                         <Pencil className="size-4" />
                         Manage
@@ -1124,7 +1150,7 @@ export function CreatorSourcingAssistant() {
                       <button
                         onClick={resetTemplate}
                         disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        className="easykol-action-button justify-center"
                       >
                         <RotateCcw className="size-4" />
                         Reset
@@ -1154,10 +1180,10 @@ export function CreatorSourcingAssistant() {
 
               <Panel title="Upload" icon={Upload}>
                 <label
-                  className={`flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition ${
+                  className={`flex flex-col items-center justify-center rounded-[1.35rem] border border-dashed px-4 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] transition ${
                     activeProject
-                      ? "cursor-pointer border-border bg-background hover:border-ring"
-                      : "cursor-not-allowed border-border bg-muted/60 opacity-75"
+                      ? "cursor-pointer border-border bg-background/82 hover:border-ring hover:bg-card"
+                      : "cursor-not-allowed border-border bg-muted/70 opacity-75"
                   }`}
                 >
                   <FileSpreadsheet className="size-7 text-muted-foreground" />
@@ -1184,7 +1210,7 @@ export function CreatorSourcingAssistant() {
                 </label>
 
                 {sourceFileName && (
-                  <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+                  <div className="mt-3 space-y-2 rounded-2xl border border-white/70 bg-white/54 px-3 py-3 text-xs text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
                     <div>
                       <p className="font-medium uppercase text-muted-foreground">Current File</p>
                       <p className="mt-1 truncate font-medium text-foreground">{sourceFileName}</p>
@@ -1243,7 +1269,7 @@ export function CreatorSourcingAssistant() {
                 {activeFilterChips.length > 0 ? (
                   <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
                 ) : null}
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium">
                       {filteredCreators.length.toLocaleString()} of{" "}
@@ -1262,7 +1288,7 @@ export function CreatorSourcingAssistant() {
                         !activeProject ||
                         creators.length === 0
                       }
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      className="easykol-action-button"
                     >
                       {isEnrichingContacts ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -1279,7 +1305,7 @@ export function CreatorSourcingAssistant() {
                         !activeProject ||
                         creators.length === 0
                       }
-                      className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="easykol-primary-button"
                     >
                       {isProcessing ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -1291,7 +1317,7 @@ export function CreatorSourcingAssistant() {
                     <button
                       onClick={() => setIsPreviewModalOpen(true)}
                       disabled={!previewReady || previewRows.length === 0}
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      className="easykol-action-button"
                     >
                       <FileSpreadsheet className="size-4" />
                       Open Preview
@@ -1299,7 +1325,7 @@ export function CreatorSourcingAssistant() {
                     <button
                       onClick={() => copyRows(previewRows, "All rows")}
                       disabled={!previewReady || previewRows.length === 0}
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      className="easykol-action-button"
                     >
                       <Copy className="size-4" />
                       Copy All Rows
@@ -1307,7 +1333,7 @@ export function CreatorSourcingAssistant() {
                     <button
                       onClick={downloadPreview}
                       disabled={!previewReady || previewRows.length === 0}
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      className="easykol-action-button"
                     >
                       <Download className="size-4" />
                       Download Modified Sheet
@@ -1879,7 +1905,7 @@ function PreviewModal({
             <button
               onClick={onCopyAll}
               disabled={rows.length === 0}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="easykol-action-button"
             >
               <Copy className="size-4" />
               Copy All Rows
@@ -1887,7 +1913,7 @@ function PreviewModal({
             <button
               onClick={onCopySelected}
               disabled={selectedRowIds.length === 0}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="easykol-action-button"
             >
               <Copy className="size-4" />
               Copy Selected Rows
@@ -1895,7 +1921,7 @@ function PreviewModal({
             <button
               onClick={onDownload}
               disabled={rows.length === 0}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="easykol-action-button"
             >
               <Download className="size-4" />
               Download Modified Sheet
@@ -1940,7 +1966,7 @@ function LeaveProjectModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{eyebrowLabel}</p>
         <h2 className="mt-3 text-lg font-semibold">
           {hasUnsavedTemplateChanges
@@ -1994,7 +2020,7 @@ function SourcingTemplateManagerModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-border bg-card shadow-2xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
@@ -2248,7 +2274,7 @@ function TemplateBuilder({
   return (
     <div>
       <p className="mb-3 text-xs leading-5 text-muted-foreground">
-        Campaign: <span className="font-medium text-foreground">{projectName}</span>
+        Workspace: <span className="font-medium text-foreground">{projectName}</span>
       </p>
       <label className="mb-4 block">
         <span className="text-xs font-medium text-muted-foreground">Template Name</span>
@@ -2256,12 +2282,12 @@ function TemplateBuilder({
           value={templateName}
           onChange={(event) => onTemplateNameChange(event.target.value)}
           placeholder="Default Template"
-          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+          className="mt-1 h-10 w-full rounded-full border border-input bg-white/70 px-3 text-sm outline-none ring-ring focus:ring-2"
         />
       </label>
       <div className="space-y-2">
         {template.map((column, index) => (
-          <div key={column.id} className="rounded-lg border border-border bg-background p-3">
+          <div key={column.id} className="rounded-lg border border-border/80 bg-background/82 p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="grid size-8 place-items-center rounded-md border border-border text-sm font-medium text-muted-foreground">
                 {index + 1}
@@ -2374,9 +2400,9 @@ function PreviewTable({
   const allSelected = rows.length > 0 && selectedRowIds.length === rows.length;
 
   return (
-    <div className="h-full max-h-[70vh] overflow-auto rounded-lg border border-border bg-background">
+    <div className="h-full max-h-[70vh] overflow-auto rounded-lg border border-border/80 bg-background/70 shadow-inner">
       <table className="min-w-max border-collapse text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-muted">
+        <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
           <tr>
             <th className="sticky left-0 z-20 w-10 border-b border-r border-border bg-muted px-3 py-2">
               <input
@@ -2399,7 +2425,7 @@ function PreviewTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-b border-border bg-card last:border-b-0">
+            <tr key={row.id} className="border-b border-border/70 bg-card/80 transition-colors hover:bg-secondary/70 last:border-b-0">
               <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 align-top">
                 <input
                   type="checkbox"
@@ -2527,7 +2553,7 @@ function PreviewMetrics({
   withoutContact: number;
 }) {
   return (
-    <div className="mt-4 grid gap-2 sm:grid-cols-4">
+    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
       <SmallMetric label="Imported Creators" value={imported} />
       <SmallMetric label="Filtered Creators" value={filtered} />
       <SmallMetric label="With Contact" value={withContact} />
@@ -2538,7 +2564,7 @@ function PreviewMetrics({
 
 function ContactEnrichmentReportPanel({ report }: { report: ContactEnrichmentReport }) {
   return (
-    <div className="mt-4 rounded-lg border border-border bg-background p-4">
+    <div className="mt-4 rounded-md border border-border/80 bg-background/70 p-4">
       <h3 className="text-sm font-semibold">Contact Enrichment Report</h3>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <SmallMetric label="Creators Processed" value={report.creatorsProcessed} />
@@ -2563,7 +2589,7 @@ function EmptyPanel({
   body: string;
 }) {
   return (
-    <div className="mt-5 rounded-lg border border-dashed border-border bg-background px-4 py-10 text-center">
+    <div className="mt-5 rounded-md border border-dashed border-border/80 bg-background/70 px-4 py-10 text-center">
       <Icon className="mx-auto size-8 text-muted-foreground" />
       <p className="mt-3 text-sm font-medium">{title}</p>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
@@ -2582,7 +2608,7 @@ function Panel({
 }) {
   return (
     <section className="katlas-panel">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2 border-b border-border/60 pb-3">
         <div className="katlas-panel-icon">
           <Icon className="size-4" />
         </div>
@@ -2595,9 +2621,18 @@ function Panel({
 
 function SmallMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="katlas-muted-box px-3 py-2">
+    <div className="katlas-muted-box px-3 py-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value.toLocaleString()}</p>
+    </div>
+  );
+}
+
+function HeroRunCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-card/70 px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
 }

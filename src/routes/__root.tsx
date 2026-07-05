@@ -7,17 +7,10 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { PasswordGate } from "@/components/PasswordGate";
-import { getPasswordGateStatus, type PasswordGateStatus } from "@/lib/passwordGate.functions";
-import {
-  hasPasswordGateAccess,
-  markPasswordGateUnlocked,
-  passwordGateLockEvent,
-} from "@/lib/passwordGate";
 
 function NotFoundComponent() {
   return (
@@ -103,8 +96,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       {
         rel: "icon",
-        type: "image/svg+xml",
-        href: "/china-flag.svg",
+        type: "image/png",
+        href: "/katlas-favicon.png",
       },
     ],
   }),
@@ -130,70 +123,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [gateStatus, setGateStatus] = useState<PasswordGateStatus | null>(null);
-  const [gateReady, setGateReady] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getPasswordGateStatus()
-      .then((status) => {
-        if (cancelled) return;
-        setGateStatus(status);
-        setIsUnlocked(
-          status.mode === "dev-bypass" || (status.mode === "protected" && hasPasswordGateAccess()),
-        );
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setGateStatus({
-          mode: "setup-error",
-          configured: false,
-          requiresPassword: true,
-          message: error instanceof Error ? error.message : "Password gate could not be checked.",
-        });
-        setIsUnlocked(false);
-      })
-      .finally(() => {
-        if (!cancelled) setGateReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    function lockApp() {
-      setIsUnlocked(gateStatus?.mode === "dev-bypass");
-    }
-
-    window.addEventListener(passwordGateLockEvent, lockApp);
-    return () => window.removeEventListener(passwordGateLockEvent, lockApp);
-  }, [gateStatus?.mode]);
-
-  function unlockApp() {
-    markPasswordGateUnlocked();
-    setIsUnlocked(true);
-  }
 
   return (
     <QueryClientProvider client={queryClient}>
-      {!gateReady ? (
-        <div className="flex min-h-screen items-center justify-center bg-background px-5 text-center text-sm text-muted-foreground">
-          Checking access...
-        </div>
-      ) : !isUnlocked && gateStatus ? (
-        <PasswordGate status={gateStatus} onUnlocked={unlockApp} />
-      ) : isUnlocked ? (
-        <>
-          {gateStatus?.mode === "dev-bypass" ? (
-            <div className="fixed bottom-4 left-4 z-[80] max-w-sm rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100 shadow-lg backdrop-blur">
-              Password gate is bypassed because KATLAS_APP_PASSWORD is not set locally.
-            </div>
-          ) : null}
-          <Outlet />
-        </>
-      ) : null}
+      <Outlet />
     </QueryClientProvider>
   );
 }
