@@ -37,8 +37,8 @@ import {
 } from "@/storage/sourcingTemplates";
 import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
 import {
-  buildContactEnrichmentReport,
   buildPreviewRow,
+  formatContacts,
   hasContactInfo,
   runEnrichmentPipeline,
 } from "./enrichment";
@@ -172,10 +172,15 @@ export function CreatorSourcingAssistant() {
   const activeCampaignIdRef = useRef("");
   const templateLoadRequestRef = useRef(0);
   const templateMutationRequestRef = useRef(0);
+  const keepPreviewReadyAfterEnrichmentRef = useRef(false);
 
   const activeProject = projects.find((project) => project.campaignId === activeProjectId);
   const activeTemplateId = activeProject?.activeTemplateId ?? "";
   const template = useMemo(() => draftTemplate, [draftTemplate]);
+  const templateCanEnrichContacts = useMemo(
+    () => templateIncludesContactsOutput(template),
+    [template],
+  );
   const templateHasUnsavedChanges = activeProject
     ? !templatesEqual(draftTemplate, activeProject.template) ||
       draftTemplateName.trim() !== activeProject.templateName
@@ -327,6 +332,10 @@ export function CreatorSourcingAssistant() {
   }, [activeProjectId, activeTemplateId, projectsLoaded]);
 
   useEffect(() => {
+    if (keepPreviewReadyAfterEnrichmentRef.current) {
+      keepPreviewReadyAfterEnrichmentRef.current = false;
+      return;
+    }
     setPreviewReady(false);
   }, [creators, filters, template]);
 
@@ -657,6 +666,17 @@ export function CreatorSourcingAssistant() {
       setErrorMessage("Upload an EasyKOL export first.");
       return;
     }
+    if (!templateCanEnrichContacts) {
+      setErrorMessage("Add a Contacts column to the active template before enriching contacts.");
+      return;
+    }
+
+    const wasPreviewReady = previewReady;
+    const contactsColumn = getContactsColumnName(headers) ?? "Contacts";
+    const columnMapWithContacts = { ...columnMap, Contacts: contactsColumn };
+    const creatorsWithEmptyContacts = creators.filter(
+      (creator) => !getCreatorCell(creator.data, contactsColumn),
+    );
 
     setIsEnrichingContacts(true);
     setErrorMessage("");
@@ -664,27 +684,75 @@ export function CreatorSourcingAssistant() {
     setEnrichmentReport(null);
 
     try {
+      if (creatorsWithEmptyContacts.length === 0) {
+        setStatusMessage("All uploaded rows already have Contacts values.");
+        return;
+      }
+
       for (const message of [
-        "Scanning EasyKOL Email column...",
-        "Scanning Description...",
-        "Scanning URL fields...",
+        "Scanning every uploaded bio field...",
+        "Extracting emails, socials, phones, and websites...",
+        "Writing results into blank Contacts cells...",
       ]) {
         setStatusMessage(message);
         await wait(220);
       }
 
       const result = await runEnrichmentPipeline({
-        creators: filteredCreators,
-        columnMap,
+        creators: creatorsWithEmptyContacts,
+        columnMap: columnMapWithContacts,
       });
 
-      setStatusMessage("Generating Contacts...");
+      setStatusMessage("Updating Contacts cells...");
       await wait(220);
-      setContactInfoByCreatorId(
-        Object.fromEntries(result.results.map((row) => [row.creatorId, row.contactInfo] as const)),
+
+      const contactTextByCreatorId = new Map(
+        result.results
+          .map((row) => [row.creatorId, formatContacts(row.contactInfo).trim()] as const)
+          .filter(([, value]) => Boolean(value)),
       );
-      setEnrichmentReport(buildContactEnrichmentReport(result.results));
-      setStatusMessage("Done. Contacts extracted from EasyKOL fields.");
+      const enrichedInfoByCreatorId = Object.fromEntries(
+        result.results
+          .filter((row) => hasContactInfo(row.contactInfo))
+          .map((row) => [row.creatorId, row.contactInfo] as const),
+      );
+
+      const filledCount = contactTextByCreatorId.size;
+      if (filledCount > 0) {
+        if (wasPreviewReady) keepPreviewReadyAfterEnrichmentRef.current = true;
+        setHeaders((current) =>
+          getContactsColumnName(current) ? current : [...current, contactsColumn],
+        );
+        setCreators((current) =>
+          current.map((creator) => {
+            const contactText = contactTextByCreatorId.get(creator.id);
+            if (!contactText || getCreatorCell(creator.data, contactsColumn)) return creator;
+            return {
+              ...creator,
+              data: {
+                ...creator.data,
+                [contactsColumn]: contactText,
+              },
+            };
+          }),
+        );
+        setContactInfoByCreatorId((current) => ({
+          ...current,
+          ...enrichedInfoByCreatorId,
+        }));
+      }
+      setEnrichmentReport(result.report);
+
+      setStatusMessage(
+        filledCount > 0
+          ? "Done. Filled " +
+              filledCount.toLocaleString() +
+              " blank Contacts cells from bio text. No AI call used." +
+              (wasPreviewReady ? " Preview updated." : "")
+          : "Scanned " +
+              creatorsWithEmptyContacts.length.toLocaleString() +
+              " blank Contacts cells. No contacts found in bio text. No AI call used.",
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
       setStatusMessage("");
@@ -1020,6 +1088,9 @@ export function CreatorSourcingAssistant() {
 
   const isConfigurationWarning = errorMessage.includes("Google Sheets pending configuration");
   const currentRunStatus = previewReady ? "Preview ready" : sourceFileName ? "File loaded" : "Waiting";
+  const enrichContactsTitle = templateCanEnrichContacts
+    ? "Scans every uploaded EasyKOL bio/description for emails, LINE, WhatsApp, Instagram, TikTok, YouTube, phones, and websites. It writes results into blank Contacts cells only, without AI."
+    : "Add a Contacts column to the active template before enriching contacts.";
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -1280,23 +1351,27 @@ export function CreatorSourcingAssistant() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={enrichContacts}
-                      disabled={
-                        isEnrichingContacts ||
-                        isProcessing ||
-                        !activeProject ||
-                        creators.length === 0
-                      }
-                      className="easykol-action-button"
-                    >
-                      {isEnrichingContacts ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="size-4" />
-                      )}
-                      Enrich Contacts
-                    </button>
+                    <span className="inline-flex" title={enrichContactsTitle}>
+                      <button
+                        onClick={enrichContacts}
+                        title={enrichContactsTitle}
+                        disabled={
+                          isEnrichingContacts ||
+                          isProcessing ||
+                          !activeProject ||
+                          creators.length === 0 ||
+                          !templateCanEnrichContacts
+                        }
+                        className="easykol-action-button"
+                      >
+                        {isEnrichingContacts ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="size-4" />
+                        )}
+                        Enrich Contacts
+                      </button>
+                    </span>
                     <button
                       onClick={preparePreview}
                       disabled={
@@ -2666,6 +2741,12 @@ function fieldColumn(fieldKey: EasyKolField, label: string): TemplateColumn {
   };
 }
 
+function templateIncludesContactsOutput(template: TemplateColumn[]): boolean {
+  return template.some(
+    (column) => column.blockType === "contacts" || column.fieldKey === "Contacts",
+  );
+}
+
 function getTemplateBlockValue(column: TemplateColumn): string {
   return column.blockType === "field" && column.fieldKey
     ? `field:${column.fieldKey}`
@@ -2673,7 +2754,7 @@ function getTemplateBlockValue(column: TemplateColumn): string {
 }
 
 function getBlockDescription(column: TemplateColumn): string {
-  if (column.blockType === "contacts") return "Generated Email, LINE, WhatsApp, Instagram block";
+  if (column.blockType === "contacts") return "Uses the Contacts column, filled by Enrich Contacts when blank";
   if (column.blockType === "blank") return "Outputs empty cells";
   if (column.blockType === "field") return column.fieldKey ?? "Choose an EasyKOL field";
   return "Fixed value";
@@ -2721,7 +2802,7 @@ function getMissingTemplateSourceFields(
   });
 
   const usesContacts = template.some((column) => column.blockType === "contacts");
-  const hasContactSource = ["Email", "Description", "URL"].some(
+  const hasContactSource = ["Contacts", "Email", "Description", "URL"].some(
     (field) => columnMap[field as EasyKolField],
   );
   if (usesContacts && !hasContactSource) {
@@ -2738,6 +2819,25 @@ function formatEasyKolFieldLabel(field: EasyKolField): string {
     "Posts (30d)": "Posts 30d",
   };
   return labels[field] ?? field;
+}
+
+function getContactsColumnName(headers: string[]): string | undefined {
+  return headers.find(isContactsHeader);
+}
+
+function isContactsHeader(header: string): boolean {
+  const normalized = normalizeContactsHeader(header);
+  return normalized === "contact" || normalized === "contacts";
+}
+
+function normalizeContactsHeader(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function getCreatorCell(data: UploadedCreator["data"], column: string): string {
+  const value = data[column];
+  if (value == null) return "";
+  return String(value).trim();
 }
 
 function valueInRange(value: unknown, range: { min: string; max: string }): boolean {

@@ -11,6 +11,7 @@ export const easyKolFields = [
   "Crawler Updated At",
   "Avg. Likes",
   "Email",
+  "Contacts",
   "Last Post",
   "Posts (7d)",
   "Posts (30d)",

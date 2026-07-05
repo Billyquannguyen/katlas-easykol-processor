@@ -57,6 +57,7 @@ export class LocalExtractor {
     const emailColumn = getCell(data, columnMap, "Email");
     const description = getCell(data, columnMap, "Description");
     const url = getCell(data, columnMap, "URL");
+    const bioText = [description, url].filter(Boolean).join(" ");
     const discoveries: ContactDiscovery[] = [];
 
     const emailFromColumn = firstMatch(emailColumn, emailRegex);
@@ -69,7 +70,7 @@ export class LocalExtractor {
       discoveries.push(createDiscovery("email", emailFromDescription, "Description", "Regex", 86));
     }
 
-    const line = extractLine(description);
+    const line = extractLine(bioText);
     if (line) {
       discoveries.push(createDiscovery("line", line, "Description", "Regex", 76));
     }
@@ -92,6 +93,26 @@ export class LocalExtractor {
       );
     } else if (instagramFromUrl) {
       discoveries.push(createDiscovery("instagram", instagramFromUrl, "URL", "URL Match", 68, url));
+    }
+
+    const tiktok = extractTiktok(bioText);
+    if (tiktok) {
+      discoveries.push(createDiscovery("tiktok", tiktok, "Description", "Regex", 64));
+    }
+
+    const youtube = extractYoutube(bioText);
+    if (youtube) {
+      discoveries.push(createDiscovery("youtube", youtube, "Description", "Regex", 64));
+    }
+
+    const phone = extractPhone(bioText);
+    if (phone && phone !== whatsappFromDescription && phone !== whatsappFromUrl) {
+      discoveries.push(createDiscovery("phone", phone, "Description", "Regex", 58));
+    }
+
+    const website = extractWebsite(bioText);
+    if (website) {
+      discoveries.push(createDiscovery("website", website, "Description", "URL Match", 54, website));
     }
 
     return dedupeDiscoveries(discoveries);
@@ -158,10 +179,19 @@ export async function runEnrichmentPipeline({
   };
 }
 
+export function createEmptyContactInfo(): ContactInfo {
+  return {
+    confidence: 0,
+    discoveryMethod: "No contact enrichment run",
+    discoveries: [],
+    externalDiscoveryStatus: "Local bio scan not run",
+  };
+}
+
 export function extractContactInfo(data: CreatorRow, columnMap: ColumnMap): ContactInfo {
   return mergeContactDiscoveries(
     localExtractor.extract({ data, columnMap }),
-    "No external discovery configured",
+    "Local bio scan only. No AI or external discovery used.",
   );
 }
 
@@ -172,7 +202,7 @@ export function hasContactInfo(contactInfo: ContactInfo): boolean {
 export function formatContacts(contactInfo: ContactInfo): string {
   const lines: string[] = [];
   if (contactInfo.email) {
-    lines.push(`Email: [${contactInfo.email}](mailto:${contactInfo.email})`);
+    lines.push(`Email: ${contactInfo.email}`);
   }
   if (contactInfo.line) {
     lines.push(`Line: ${formatHandle(contactInfo.line)}`);
@@ -214,16 +244,29 @@ export function buildPreviewRow({
   template: TemplateColumn[];
   contactInfo?: ContactInfo;
 }): PreviewRow {
-  const resolvedContactInfo = contactInfo ?? extractContactInfo(data, columnMap);
+  const contactsCell = getCell(data, columnMap, "Contacts");
+  const resolvedContactInfo =
+    contactInfo ??
+    (contactsCell ? createContactInfoFromContactsCell(contactsCell) : createEmptyContactInfo());
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
-    if (column.blockType === "contacts") return formatContacts(resolvedContactInfo);
+    if (column.blockType === "contacts") return contactsCell || formatContacts(resolvedContactInfo);
     if (!column.fieldKey) return "";
     return getCell(data, columnMap, column.fieldKey);
   });
 
   return { id, values, contactInfo: resolvedContactInfo };
+}
+
+function createContactInfoFromContactsCell(value: string): ContactInfo {
+  return {
+    other: value,
+    confidence: 100,
+    discoveryMethod: "Existing Contacts column",
+    discoveries: [],
+    externalDiscoveryStatus: "Existing Contacts column",
+  };
 }
 
 function mergeContactDiscoveries(
@@ -337,9 +380,39 @@ function extractInstagram(text: string): string | undefined {
   const url = firstMatch(text, /https?:\/\/(?:www\.)?instagram\.com\/[a-zA-Z0-9_.]+\/?/gi);
   if (url) return cleanUrl(url);
   const handle = text.match(/(?:instagram|ig|insta)[:\s@-]+([a-zA-Z0-9_.]{2,30})/i)?.[1];
-  return handle ? `https://instagram.com/${handle.replace(/^@/, "")}` : undefined;
+  const cleanHandle = handle ? cleanSocialHandle(handle) : "";
+  return cleanHandle ? `https://instagram.com/${cleanHandle}` : undefined;
 }
 
+function extractTiktok(text: string): string | undefined {
+  const url = firstMatch(text, /https?:\/\/(?:www\.)?tiktok\.com\/@?[a-zA-Z0-9_.-]+\/?/gi);
+  if (url) return cleanUrl(url);
+  const handle = text.match(/(?:tiktok|tik tok)[:\s@-]+([a-zA-Z0-9_.-]{2,30})/i)?.[1];
+  const cleanHandle = handle ? cleanSocialHandle(handle) : "";
+  return cleanHandle ? "https://tiktok.com/@" + cleanHandle : undefined;
+}
+
+function extractYoutube(text: string): string | undefined {
+  const url = firstMatch(
+    text,
+    /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:@|channel\/|c\/|user\/)?[a-zA-Z0-9_.@-]+|youtu\.be\/[a-zA-Z0-9_-]+)\/?/gi,
+  );
+  return url ? cleanUrl(url) : undefined;
+}
+
+function extractPhone(text: string): string | undefined {
+  const match = firstMatch(text, phoneRegex);
+  return match ? normalizePhone(match) : undefined;
+}
+
+function extractWebsite(text: string): string | undefined {
+  const urls = text.match(urlRegex)?.map(cleanUrl) ?? [];
+  return urls.find((url) => !isSocialOrMessagingUrl(url));
+}
+
+function isSocialOrMessagingUrl(url: string): boolean {
+  return /(?:instagram\.com|tiktok\.com|youtube\.com|youtu\.be|wa\.me|whatsapp)/i.test(url);
+}
 function firstMatch(text: string, regex: RegExp): string | undefined {
   return text.match(regex)?.[0]?.trim();
 }
@@ -349,8 +422,12 @@ function cleanUrl(url: string): string {
 }
 
 function formatHandle(value: string): string {
-  const clean = value.trim();
+  const clean = cleanSocialHandle(value);
   return clean.startsWith("@") ? clean : `@${clean}`;
+}
+
+function cleanSocialHandle(value: string): string {
+  return value.trim().replace(/^@/, "").replace(/[.,;:!?)]*$/g, "");
 }
 
 function normalizePhone(value: string): string {
