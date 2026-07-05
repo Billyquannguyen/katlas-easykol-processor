@@ -1362,10 +1362,10 @@ export function CreatorSourcingAssistant() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="inline-flex" title={enrichContactsTitle}>
+                    <span className="group relative inline-flex">
                       <button
                         onClick={enrichContacts}
-                        title={enrichContactsTitle}
+                        aria-describedby="enrich-contacts-tooltip"
                         disabled={
                           isEnrichingContacts ||
                           isProcessing ||
@@ -1382,6 +1382,13 @@ export function CreatorSourcingAssistant() {
                         )}
                         Enrich Contacts
                       </button>
+                      <span
+                        id="enrich-contacts-tooltip"
+                        role="tooltip"
+                        className="pointer-events-none absolute bottom-[calc(100%+0.7rem)] left-1/2 z-40 w-80 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950 px-4 py-3 text-left text-xs font-medium leading-5 text-white opacity-0 shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition group-hover:opacity-100 group-focus-within:opacity-100"
+                      >
+                        {enrichContactsTitle}
+                      </span>
                     </span>
                     <button
                       onClick={preparePreview}
