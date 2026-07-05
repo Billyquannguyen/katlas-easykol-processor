@@ -36,12 +36,7 @@ import {
   isActiveSourcingTemplateRecord,
 } from "@/storage/sourcingTemplates";
 import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
-import {
-  buildPreviewRow,
-  formatContacts,
-  hasContactInfo,
-  runEnrichmentPipeline,
-} from "./enrichment";
+import { buildPreviewRow, hasContactInfo } from "./enrichment";
 import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
 import {
   emptyFilters,
@@ -56,6 +51,7 @@ import {
   type EmailAvailability,
   type ContactEnrichmentReport,
   type ContactInfo,
+  type CreatorRow,
   type EasyKolField,
   type FilterSettings,
   type PreviewRow,
@@ -381,20 +377,23 @@ export function CreatorSourcingAssistant() {
 
   function requestTemplateChange(templateId: string) {
     if (templateId === activeTemplateId) return;
-    if (shouldConfirmBeforeLeaving) {
-      setPendingLeaveAction({ type: "selectTemplate", templateId });
-      return;
+    if (templateHasUnsavedChanges) {
+      const confirmed =
+        typeof window === "undefined" ||
+        window.confirm(
+          "Switch templates and discard unsaved template changes? The uploaded sheet and filters will stay loaded.",
+        );
+      if (!confirmed) return;
     }
     switchTemplate(templateId);
   }
 
   function switchTemplate(templateId: string) {
-    resetWorkingData({
-      resetDraft: false,
-      resetFilters: false,
-      clearMessages: true,
-      closeTemplateUi: false,
-    });
+    setPreviewReady(false);
+    setIsPreviewModalOpen(false);
+    setCopyMessage("");
+    setErrorMessage("");
+    setTemplateMessage("");
     setProjects((current) =>
       current.map((project) =>
         project.campaignId === activeProjectId
@@ -402,7 +401,11 @@ export function CreatorSourcingAssistant() {
           : project,
       ),
     );
-    setStatusMessage("Template changed.");
+    setStatusMessage(
+      sourceFileName
+        ? "Template changed. Prepare Preview to apply it to the uploaded sheet."
+        : "Template changed.",
+    );
   }
 
   async function persistSourcingTemplate(template: SourcingTemplate, successMessage: string) {
@@ -493,12 +496,11 @@ export function CreatorSourcingAssistant() {
       updatedAt: now,
     };
 
-    resetWorkingData({
-      resetDraft: false,
-      resetFilters: false,
-      clearMessages: true,
-      closeTemplateUi: false,
-    });
+    setPreviewReady(false);
+    setIsPreviewModalOpen(false);
+    setCopyMessage("");
+    setErrorMessage("");
+    setTemplateMessage("");
     setDraftTemplate(cloneTemplate(nextTemplate.columns));
     setDraftTemplateName(nextTemplate.templateName);
     const saved = await persistSourcingTemplate(
@@ -633,12 +635,14 @@ export function CreatorSourcingAssistant() {
 
     try {
       const parsed = await parseSpreadsheet(file);
-      const uploadedCreators = parsed.rows.map((row, index) => ({
-        id: `${Date.now()}-${index}`,
+      const contactsImport = importEasyKolEmailsIntoContacts(parsed.headers, parsed.rows);
+      const uploadId = Date.now();
+      const uploadedCreators = contactsImport.rows.map((row, index) => ({
+        id: `${uploadId}-${index}`,
         data: row,
       }));
 
-      setHeaders(parsed.headers);
+      setHeaders(contactsImport.headers);
       setCreators(uploadedCreators);
       setSourceFileName(file.name);
       setSheetName(parsed.sheetName);
@@ -647,7 +651,10 @@ export function CreatorSourcingAssistant() {
       setContactInfoByCreatorId({});
       setEnrichmentReport(null);
       setStatusMessage(
-        `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}.`,
+        `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}.` +
+          (contactsImport.importedCount > 0
+            ? ` Imported ${contactsImport.importedCount.toLocaleString()} EasyKOL emails into Contacts.`
+            : ""),
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -673,7 +680,6 @@ export function CreatorSourcingAssistant() {
 
     const wasPreviewReady = previewReady;
     const contactsColumn = getContactsColumnName(headers) ?? "Contacts";
-    const columnMapWithContacts = { ...columnMap, Contacts: contactsColumn };
     const creatorsWithEmptyContacts = creators.filter(
       (creator) => !getCreatorCell(creator.data, contactsColumn),
     );
@@ -690,34 +696,42 @@ export function CreatorSourcingAssistant() {
       }
 
       for (const message of [
-        "Scanning every uploaded bio field...",
-        "Extracting emails, socials, phones, and websites...",
-        "Writing results into blank Contacts cells...",
+        "Finding rows without Contacts values...",
+        "Filling EasyKOL emails first, then full bios for the remaining blanks...",
+        "Updating Contacts cells...",
       ]) {
         setStatusMessage(message);
         await wait(220);
       }
 
-      const result = await runEnrichmentPipeline({
-        creators: creatorsWithEmptyContacts,
-        columnMap: columnMapWithContacts,
+      const contactBackfillByCreatorId = new Map<
+        string,
+        { value: string; source: "email" | "bio" }
+      >();
+      creatorsWithEmptyContacts.forEach((creator) => {
+        const email = getCell(creator.data, columnMap, "Email").trim();
+        if (email) {
+          contactBackfillByCreatorId.set(creator.id, {
+            value: formatEasyKolEmailContact(email),
+            source: "email",
+          });
+          return;
+        }
+
+        const bio = getCell(creator.data, columnMap, "Description").trim();
+        if (bio) {
+          contactBackfillByCreatorId.set(creator.id, {
+            value: bio,
+            source: "bio",
+          });
+        }
       });
+      const filledCount = contactBackfillByCreatorId.size;
+      const emailFilledCount = Array.from(contactBackfillByCreatorId.values()).filter(
+        (item) => item.source === "email",
+      ).length;
+      const bioFilledCount = filledCount - emailFilledCount;
 
-      setStatusMessage("Updating Contacts cells...");
-      await wait(220);
-
-      const contactTextByCreatorId = new Map(
-        result.results
-          .map((row) => [row.creatorId, formatContacts(row.contactInfo).trim()] as const)
-          .filter(([, value]) => Boolean(value)),
-      );
-      const enrichedInfoByCreatorId = Object.fromEntries(
-        result.results
-          .filter((row) => hasContactInfo(row.contactInfo))
-          .map((row) => [row.creatorId, row.contactInfo] as const),
-      );
-
-      const filledCount = contactTextByCreatorId.size;
       if (filledCount > 0) {
         if (wasPreviewReady) keepPreviewReadyAfterEnrichmentRef.current = true;
         setHeaders((current) =>
@@ -725,33 +739,30 @@ export function CreatorSourcingAssistant() {
         );
         setCreators((current) =>
           current.map((creator) => {
-            const contactText = contactTextByCreatorId.get(creator.id);
-            if (!contactText || getCreatorCell(creator.data, contactsColumn)) return creator;
+            const contactBackfill = contactBackfillByCreatorId.get(creator.id);
+            if (!contactBackfill || getCreatorCell(creator.data, contactsColumn)) return creator;
             return {
               ...creator,
               data: {
                 ...creator.data,
-                [contactsColumn]: contactText,
+                [contactsColumn]: contactBackfill.value,
               },
             };
           }),
         );
-        setContactInfoByCreatorId((current) => ({
-          ...current,
-          ...enrichedInfoByCreatorId,
-        }));
       }
-      setEnrichmentReport(result.report);
 
       setStatusMessage(
         filledCount > 0
           ? "Done. Filled " +
-              filledCount.toLocaleString() +
-              " blank Contacts cells from bio text. No AI call used." +
+              emailFilledCount.toLocaleString() +
+              " EasyKOL emails and copied " +
+              bioFilledCount.toLocaleString() +
+              " full bios into blank Contacts cells. No AI call used." +
               (wasPreviewReady ? " Preview updated." : "")
           : "Scanned " +
               creatorsWithEmptyContacts.length.toLocaleString() +
-              " blank Contacts cells. No contacts found in bio text. No AI call used.",
+              " blank Contacts cells. No EasyKOL emails or bios found to copy. No AI call used.",
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -1089,7 +1100,7 @@ export function CreatorSourcingAssistant() {
   const isConfigurationWarning = errorMessage.includes("Google Sheets pending configuration");
   const currentRunStatus = previewReady ? "Preview ready" : sourceFileName ? "File loaded" : "Waiting";
   const enrichContactsTitle = templateCanEnrichContacts
-    ? "Scans every uploaded EasyKOL bio/description for emails, LINE, WhatsApp, Instagram, TikTok, YouTube, phones, and websites. It writes results into blank Contacts cells only, without AI."
+    ? "EasyKOL emails are imported into Contacts on upload. Enrich copies the full EasyKOL bio/description into Contacts only for rows that still have blank Contacts, without AI."
     : "Add a Contacts column to the active template before enriching contacts.";
 
   return (
@@ -2819,6 +2830,38 @@ function formatEasyKolFieldLabel(field: EasyKolField): string {
     "Posts (30d)": "Posts 30d",
   };
   return labels[field] ?? field;
+}
+
+function importEasyKolEmailsIntoContacts(
+  headers: string[],
+  rows: CreatorRow[],
+): { headers: string[]; rows: CreatorRow[]; importedCount: number } {
+  const contactsColumn = getContactsColumnName(headers) ?? "Contacts";
+  const hasContactsColumn = Boolean(getContactsColumnName(headers));
+  const sourceColumnMap = inferColumnMap(headers);
+  let importedCount = 0;
+
+  const rowsWithContacts = rows.map((row) => {
+    if (getCreatorCell(row, contactsColumn)) return row;
+    const email = getCell(row, sourceColumnMap, "Email");
+    if (!email) return row;
+    importedCount += 1;
+    return {
+      ...row,
+      [contactsColumn]: formatEasyKolEmailContact(email),
+    };
+  });
+
+  return {
+    headers: hasContactsColumn || importedCount === 0 ? headers : [...headers, contactsColumn],
+    rows: rowsWithContacts,
+    importedCount,
+  };
+}
+
+function formatEasyKolEmailContact(email: string): string {
+  const clean = email.trim();
+  return /^email\s*:/i.test(clean) ? clean : `Email: ${clean}`;
 }
 
 function getContactsColumnName(headers: string[]): string | undefined {
